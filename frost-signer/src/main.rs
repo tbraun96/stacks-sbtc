@@ -4,20 +4,22 @@ use std::thread::spawn;
 use std::{thread, time};
 
 use clap::Parser;
-use slog::slog_info;
+use tracing::info;
 
-use stacks_common::info;
-use stacks_signer::config::{Cli, Config};
-use stacks_signer::net::{HttpNet, HttpNetListen, Message, Net, NetListen};
-use stacks_signer::signing_round::SigningRound;
+use frost_signer::config::{Cli, Config};
+use frost_signer::logging;
+use frost_signer::net::{HttpNet, HttpNetListen, Message, Net, NetListen};
+use frost_signer::signing_round::SigningRound;
 
 fn main() {
+    logging::initiate_tracing_subscriber(tracing::Level::INFO).unwrap();
+
     let mut config = Config::from_file("conf/stacker.toml").unwrap();
     let cli = Cli::parse();
     config.merge(&cli); // merge command line options
     info!(
         "{} signer id #{}",
-        stacks_signer::version(),
+        frost_signer::version(),
         config.signer.frost_id
     ); // sign-on message
 

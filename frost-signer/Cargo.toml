@@ -1,25 +1,16 @@
 [package]
-name = "stacks-signer"
+name = "frost-signer"
 version = "0.0.1"
 license = "GPLv3"
-homepage = "https://github.com/blockstack/stacks-blockchain"
-repository = "https://github.com/blockstack/stacks-blockchain"
+homepage = "https://github.com/Trust-Machines/core-eng"
+repository = "https://github.com/Trust-Machines/core-eng"
 edition = "2021"
-
-[[bin]]
-name = "stacks-signer"
-path = "src/bin/signer.rs"
-
-[[bin]]
-name = "stacks-coordinator"
-path = "src/bin/coordinator.rs"
 
 [lib]
 path = "src/lib.rs"    # The source file of the target.
 crate-type = ["lib"]   # The crate types to generate.
 
 [dependencies]
-backoff = "0.4"
 bincode = "1.3.3"
 clap = { version = "4.1.1", features = ["derive"] }
 frost = { git = "https://github.com/trust-machines/frost", branch = "sbtc" }
@@ -29,14 +20,8 @@ rand_core = { version  = "0.5"}
 p256k1 = { git = "https://github.com/Trust-Machines/p256k1", branch = "sbtc" }
 serde = { version = "1.0", features = ["serde_derive"] }
 sha3 = "0.10.6"
-slog-json = { version = "2.3.0", optional = true }
-slog-term = "2.6.0"
-slog = { version = "2.5.2", features = [ "max_level_trace" ] }
-stacks-common = { path = "../../stacks-common" }
 thiserror = "1.0"
 toml = "0.5.9"
+tracing = "0.1.37"
+tracing-subscriber = "0.3.16"
 ureq = { version = "2.6", features = [] }
-
-[build-dependencies]
-build-utils = { path = "../../build-utils" }
-

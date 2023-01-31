@@ -1,5 +1,5 @@
-use stacks_signer::net::{HttpNet, HttpNetListen, Message, NetListen};
-use stacks_signer::signing_round::{DkgBegin, MessageTypes};
+use frost_signer::net::{HttpNet, HttpNetListen, Message, NetListen};
+use frost_signer::signing_round::{DkgBegin, MessageTypes};
 
 #[test]
 fn receive_msg() {

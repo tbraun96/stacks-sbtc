@@ -1,9 +1,7 @@
 use std::fmt::Debug;
 
 use serde::{Deserialize, Serialize};
-use slog::{slog_debug, slog_info, slog_warn};
-
-use stacks_common::{debug, info, warn};
+use tracing::{debug, info, warn};
 
 use crate::signing_round;
 
@@ -113,7 +111,7 @@ impl Net for HttpNet {
             }
             Err(e) => {
                 info!("post failed to {} {}", self.stacks_node_url, e);
-                return Err(e.into());
+                return Err(Box::new(e).into());
             }
         };
 
@@ -127,7 +125,7 @@ pub enum HttpNetError {
     SerializationError(#[from] bincode::Error),
 
     #[error("Network error: {0}")]
-    NetworkError(#[from] ureq::Error),
+    NetworkError(#[from] Box<ureq::Error>),
 }
 
 fn url_with_id(base: &str, id: u64) -> String {

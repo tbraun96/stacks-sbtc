@@ -4,9 +4,8 @@ use hashbrown::HashMap;
 use p256k1::scalar::Scalar;
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
-use slog::{slog_debug, slog_info};
 
-use stacks_common::{debug, info};
+use tracing::{debug, info};
 
 use crate::state_machine::{StateMachine, States};
 
@@ -139,14 +138,14 @@ impl SigningRound {
         let frost_signer = frost::v1::Signer::new(&party_ids, total, threshold, &mut rng);
         let signer = Signer {
             frost_signer,
-            signer_id: signer_id,
+            signer_id,
         };
 
         SigningRound {
             dkg_id: None,
-            threshold: threshold,
-            total: total,
-            signer: signer,
+            threshold,
+            total,
+            signer,
             state: States::Init,
             commitments: HashMap::new(),
             shares: HashMap::new(),
@@ -242,13 +241,16 @@ impl SigningRound {
         dkg_private_shares: DkgPrivateShares,
     ) -> Result<Vec<MessageTypes>, String> {
         info!(
-                "{} private shares received for party #{}. shares {}/{}",
-                dkg_private_shares.private_shares.len(),
-                dkg_private_shares.party_id,
-                self.shares.len(),
-                self.total
-            );
-        self.shares.insert(dkg_private_shares.party_id, dkg_private_shares.private_shares);
+            "{} private shares received for party #{}. shares {}/{}",
+            dkg_private_shares.private_shares.len(),
+            dkg_private_shares.party_id,
+            self.shares.len(),
+            self.total
+        );
+        self.shares.insert(
+            dkg_private_shares.party_id,
+            dkg_private_shares.private_shares,
+        );
         Ok(vec![])
     }
 }
