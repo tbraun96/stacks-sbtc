@@ -324,7 +324,7 @@ dependencies = [
 [[package]]
 name = "frost"
 version = "0.1.0"
-source = "git+https://github.com/trust-machines/frost?branch=sbtc#6a5d9d8c05f77de643fb766f98bc0606d3ffa759"
+source = "git+https://github.com/trust-machines/frost?branch=sbtc#893604967b67420154128f9e2238b536ea0d3180"
 dependencies = [
  "hashbrown",
  "hex",
@@ -339,7 +339,7 @@ dependencies = [
 
 [[package]]
 name = "frost-coordinator"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "backoff",
  "clap 4.1.4",
