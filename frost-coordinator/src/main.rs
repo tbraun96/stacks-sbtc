@@ -1,6 +1,7 @@
+use std::time::Duration;
+
 use clap::Parser;
 use hashbrown::HashSet;
-use std::time::Duration;
 use tracing::{debug, info};
 
 use frost_signer::config::Config;
