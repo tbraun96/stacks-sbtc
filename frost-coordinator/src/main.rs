@@ -124,11 +124,11 @@ where
                         dkg_end_msg.dkg_id, dkg_end_msg.signer_id, ids_to_await
                     );
                 }
-                (_, _) => {
-                    info!("wait for dkg catchall");
-                }
+                (_, _) => {}
             }
-            info!("wait for dkg bottom loop")
+            if ids_to_await.len() == 0 {
+                return Ok(());
+            }
         }
     }
 
