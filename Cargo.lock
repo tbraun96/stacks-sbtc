@@ -339,7 +339,7 @@ dependencies = [
 
 [[package]]
 name = "frost-coordinator"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "backoff",
  "clap 4.1.4",
