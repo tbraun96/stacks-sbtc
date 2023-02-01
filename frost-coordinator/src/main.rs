@@ -1,7 +1,7 @@
 use clap::Parser;
 use hashbrown::HashSet;
 use std::time::Duration;
-use tracing::info;
+use tracing::{debug, info};
 
 use frost_signer::config::Config;
 use frost_signer::logging;
@@ -142,7 +142,7 @@ where
         };
 
         let notify = |_err, dur| {
-            info!("No message. Next poll in {:?}", dur);
+            debug!("No message. Next poll in {:?}", dur);
         };
 
         let backoff_timer = backoff::ExponentialBackoffBuilder::new()
