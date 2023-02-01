@@ -4,7 +4,6 @@ use hashbrown::HashMap;
 use p256k1::scalar::Scalar;
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
-
 use tracing::{debug, info};
 
 use crate::state_machine::{StateMachine, States};
@@ -253,5 +252,56 @@ impl SigningRound {
             dkg_private_shares.private_shares,
         );
         Ok(vec![])
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use frost::common::PolyCommitment;
+    use frost::schnorr::ID;
+    use hashbrown::HashMap;
+    use p256k1::scalar::Scalar;
+    use rand_core::OsRng;
+
+    use crate::signing_round::{DkgPublicShare, SigningRound};
+    use crate::state_machine::States;
+
+    #[test]
+    fn dkg_public_share() {
+        let mut rnd = OsRng::default();
+        let mut signing_round = SigningRound::new(1, 1, 1, vec![1]);
+        let public_share = DkgPublicShare{
+            dkg_id: 0,
+            party_id: 0,
+            public_share: PolyCommitment {
+                id: ID::new(&Scalar::new(), &Scalar::new(), &mut rnd),
+                A: vec![],
+            },
+        };
+        signing_round.dkg_public_share(public_share).unwrap();
+        assert_eq!(1, signing_round.commitments.len())
+    }
+
+    #[test]
+    fn can_dkg_end() {
+        let mut rnd = OsRng::default();
+        let mut signing_round = SigningRound::new(1, 1, 1, vec![1]);
+        // can_dkg_end starts out as false
+        assert_eq!(false, signing_round.can_dkg_end());
+
+        // meet the conditions for DKG_END
+        signing_round.state = States::DkgGather;
+        signing_round.commitments.insert(
+            1,
+            PolyCommitment {
+                id: ID::new(&Scalar::new(), &Scalar::new(), &mut rnd),
+                A: vec![],
+            },
+        );
+        let shares: HashMap<usize, Scalar> = HashMap::new();
+        signing_round.shares.insert(1, shares);
+
+        // can_dkg_end should be true
+        assert!(signing_round.can_dkg_end());
     }
 }
