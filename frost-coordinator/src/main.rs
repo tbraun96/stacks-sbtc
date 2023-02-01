@@ -1,5 +1,6 @@
 use clap::Parser;
 use hashbrown::HashSet;
+use std::time::Duration;
 use tracing::info;
 
 use frost_signer::config::Config;
@@ -144,12 +145,10 @@ where
             info!("No message. Next poll in {:?}", dur);
         };
 
-        backoff::retry_notify(
-            backoff::ExponentialBackoff::default(),
-            get_next_message,
-            notify,
-        )
-        .map_err(|_| Error::Timeout)
+        let backoff_timer = backoff::ExponentialBackoffBuilder::new()
+            .with_max_interval(Duration::from_secs(3))
+            .build();
+        backoff::retry_notify(backoff_timer, get_next_message, notify).map_err(|_| Error::Timeout)
     }
 }
 
