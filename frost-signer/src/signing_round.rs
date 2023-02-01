@@ -4,7 +4,7 @@ use hashbrown::HashMap;
 use p256k1::scalar::Scalar;
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::state_machine::{StateMachine, States};
 
@@ -167,17 +167,34 @@ impl SigningRound {
         match out_msgs {
             Ok(mut out) => {
                 if self.can_dkg_end() {
-                    let dkg_end = MessageTypes::DkgEnd(DkgEnd {
-                        dkg_id: self.dkg_id.unwrap() as u64,
-                        signer_id: self.signer.signer_id as usize,
-                    });
-                    out.push(dkg_end);
+                    let dkg_end_msgs = self.dkg_ended().unwrap();
+                    out.push(dkg_end_msgs);
                     self.move_to(States::Idle).unwrap();
                 }
                 Ok(out)
             }
             Err(e) => Err(e),
         }
+    }
+
+    pub fn dkg_ended(&self) -> Result<MessageTypes, String> {
+        for mut party in self.signer.frost_signer.parties {
+            let commitments = self.commitments.into_values().collect::<Vec<_>>();
+            let party_id_u32 = party.id as u32;
+            let shares: HashMap<usize, Scalar> = self.shares.get(&party_id_u32).unwrap().to_owned();
+            if let Err(secret_error) = party.compute_secret(shares, &commitments) {
+                warn!(
+                    "party compute secret failed in DKG round #{}: {}",
+                    self.dkg_id.unwrap(),
+                    secret_error
+                );
+            }
+        }
+        let dkg_end = MessageTypes::DkgEnd(DkgEnd {
+            dkg_id: self.dkg_id.unwrap() as u64,
+            signer_id: self.signer.signer_id as usize,
+        });
+        Ok(dkg_end)
     }
 
     pub fn can_dkg_end(&self) -> bool {
@@ -270,7 +287,7 @@ mod test {
     fn dkg_public_share() {
         let mut rnd = OsRng::default();
         let mut signing_round = SigningRound::new(1, 1, 1, vec![1]);
-        let public_share = DkgPublicShare{
+        let public_share = DkgPublicShare {
             dkg_id: 0,
             party_id: 0,
             public_share: PolyCommitment {
