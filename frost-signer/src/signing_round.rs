@@ -178,8 +178,10 @@ impl SigningRound {
     }
 
     pub fn dkg_ended(&self) -> Result<MessageTypes, String> {
-        for mut party in self.signer.frost_signer.parties {
-            let commitments = self.commitments.into_values().collect::<Vec<_>>();
+        let p = self.signer.frost_signer.parties.clone();
+        for mut party in p {
+            let commitments_clone = self.commitments.clone();
+            let commitments: Vec<PolyCommitment> = commitments_clone.into_values().collect();
             let party_id_u32 = party.id as u32;
             let shares: HashMap<usize, Scalar> = self.shares.get(&party_id_u32).unwrap().to_owned();
             if let Err(secret_error) = party.compute_secret(shares, &commitments) {
