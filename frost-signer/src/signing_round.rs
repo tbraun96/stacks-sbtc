@@ -180,8 +180,7 @@ impl SigningRound {
     pub fn dkg_ended(&self) -> Result<MessageTypes, String> {
         let p = self.signer.frost_signer.parties.clone();
         for mut party in p {
-            let commitments_clone = self.commitments.clone();
-            let commitments: Vec<PolyCommitment> = commitments_clone.into_values().collect();
+            let commitments: Vec<PolyCommitment> = self.commitments.iter().map(|(idx, commitment)|{commitment.clone()}).collect();
             let party_id_u32 = party.id as u32;
             let shares: HashMap<usize, Scalar> = self.shares.get(&party_id_u32).unwrap().to_owned();
             if let Err(secret_error) = party.compute_secret(shares, &commitments) {
@@ -215,20 +214,28 @@ impl SigningRound {
         self.signer.frost_signer.parties[party_id].get_shares()
     }
 
+    pub fn reset(&mut self, dkg_id: usize) {
+        self.dkg_id = Some(dkg_id);
+        self.commitments.clear();
+        self.shares.clear();
+    }
+
     pub fn dkg_begin(&mut self, dkg_begin: DkgBegin) -> Result<Vec<MessageTypes>, String> {
-        self.dkg_id = Some(dkg_begin.dkg_id as usize);
+        self.reset(dkg_begin.dkg_id as usize);
         self.move_to(States::DkgDistribute).unwrap();
         let _party_state = self.signer.frost_signer.save();
+
         let mut rng = OsRng::default();
         let mut msgs = vec![];
         for (_idx, party) in self.signer.frost_signer.parties.iter().enumerate() {
-            info!("creating dkg private share for party #{}", party.id);
+            info!("sending dkg private share for party #{}", party.id);
             let private_shares = MessageTypes::DkgPrivateShares(DkgPrivateShares {
                 dkg_id: self.dkg_id.unwrap() as u64,
                 party_id: party.id as u32,
                 private_shares: party.get_shares(),
             });
             msgs.push(private_shares);
+            info!("sending dkg public commitment for party #{}", party.id);
             let public_share = MessageTypes::DkgPublicShare(DkgPublicShare {
                 dkg_id: self.dkg_id.unwrap() as u64,
                 party_id: party.id as u32,
@@ -236,6 +243,7 @@ impl SigningRound {
             });
             msgs.push(public_share);
         }
+
         self.move_to(States::DkgGather).unwrap();
         Ok(msgs)
     }
