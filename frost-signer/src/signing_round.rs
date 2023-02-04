@@ -178,15 +178,22 @@ impl SigningRound {
     }
 
     pub fn dkg_ended(&self) -> Result<MessageTypes, String> {
-        let p = self.signer.frost_signer.parties.clone();
-        for mut party in p {
-            let commitments: Vec<PolyCommitment> = self.commitments.iter().map(|(idx, commitment)|{commitment.clone()}).collect();
-            let party_id_u32 = party.id as u32;
-            let shares: HashMap<usize, Scalar> = self.shares.get(&party_id_u32).unwrap().to_owned();
+        let parties = self.signer.frost_signer.parties.clone();
+        for mut party in parties {
+            let mut commitments: Vec<PolyCommitment> = vec![];
+            for idx in 0..self.commitments.len() {
+                commitments.push(self.commitments.get(&((idx+1) as u32)).unwrap().to_owned());
+            }
+            let mut shares: HashMap<usize, Scalar> = HashMap::new();
+            for (party_id, party_shares) in &self.shares {
+                shares.insert((*party_id as usize)-1, party_shares[&party.id]);
+            }
+            info!("party{}.compute_secret shares_for_id:{:?}", party.id, shares.keys());
             if let Err(secret_error) = party.compute_secret(shares, &commitments) {
                 warn!(
-                    "party compute secret failed in DKG round #{}: {}",
+                    "DKG round #{}: party {} compute_secret failed in : {}",
                     self.dkg_id.unwrap(),
+                    party.id,
                     secret_error
                 );
             }
@@ -195,6 +202,7 @@ impl SigningRound {
             dkg_id: self.dkg_id.unwrap() as u64,
             signer_id: self.signer.signer_id as usize,
         });
+        info!("DKG_END round #{} signer_id {}", self.dkg_id.unwrap(), self.signer.signer_id);
         Ok(dkg_end)
     }
 
