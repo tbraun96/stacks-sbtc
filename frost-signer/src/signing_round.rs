@@ -167,6 +167,7 @@ impl SigningRound {
         match out_msgs {
             Ok(mut out) => {
                 if self.can_dkg_end() {
+                    info!("can_dkg_end==true. shares {} commitments {}", self.shares.len(), self.commitments.len());
                     let dkg_end_msgs = self.dkg_ended().unwrap();
                     out.push(dkg_end_msgs);
                     self.move_to(States::Idle).unwrap();
@@ -182,11 +183,12 @@ impl SigningRound {
         for mut party in parties {
             let mut commitments: Vec<PolyCommitment> = vec![];
             for idx in 0..self.commitments.len() {
-                commitments.push(self.commitments.get(&((idx+1) as u32)).unwrap().to_owned());
+                commitments.push(self.commitments.get(&((idx) as u32)).unwrap().to_owned());
             }
             let mut shares: HashMap<usize, Scalar> = HashMap::new();
             for (party_id, party_shares) in &self.shares {
-                shares.insert((*party_id as usize)-1, party_shares[&party.id]);
+                info!("building shares with k: {} v: party_shares[{}] len {} keys: {:?}", party_id, party.id, party_shares.len(), party_shares.keys());
+                shares.insert((*party_id as usize), party_shares[&party.id]);
             }
             info!("party{}.compute_secret shares_for_id:{:?}", party.id, shares.keys());
             if let Err(secret_error) = party.compute_secret(shares, &commitments) {
@@ -263,7 +265,7 @@ impl SigningRound {
         self.commitments
             .insert(dkg_public_share.party_id, dkg_public_share.public_share);
         info!(
-            "public share received for party #{}. commitments {}/{}",
+            "received party #{} PUBLIC commitments {}/{}",
             dkg_public_share.party_id,
             self.commitments.len(),
             self.total
@@ -275,16 +277,17 @@ impl SigningRound {
         &mut self,
         dkg_private_shares: DkgPrivateShares,
     ) -> Result<Vec<MessageTypes>, String> {
-        info!(
-            "{} private shares received for party #{}. shares {}/{}",
-            dkg_private_shares.private_shares.len(),
-            dkg_private_shares.party_id,
-            self.shares.len(),
-            self.total
-        );
+        let shares_clone = dkg_private_shares.private_shares.clone();
         self.shares.insert(
             dkg_private_shares.party_id,
             dkg_private_shares.private_shares,
+        );
+        info!(
+            "received party #{} PRIVATE shares {}/{} {:?}",
+            dkg_private_shares.party_id,
+            self.shares.len(),
+            self.total,
+            shares_clone.keys(),
         );
         Ok(vec![])
     }

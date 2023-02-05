@@ -52,7 +52,7 @@ fn poll_loop(mut net: HttpNetListen, tx: Sender<Message>, id: u64) {
 
 fn main_loop(config: &Config, net: &HttpNet, rx: Receiver<Message>) {
     let signer_id = config.signer.frost_id;
-    let party_ids = vec![(signer_id * 2 - 1) as usize, (signer_id * 2) as usize]; // take two party/reward slots based on id
+    let party_ids = vec![(signer_id * 2 - 2) as usize, (signer_id * 2 - 1) as usize]; // take two party/reward slots based on id
     let mut round = SigningRound::new(
         config.common.minimum_parties,
         config.common.total_parties,
