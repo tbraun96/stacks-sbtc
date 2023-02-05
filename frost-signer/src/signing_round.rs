@@ -167,7 +167,11 @@ impl SigningRound {
         match out_msgs {
             Ok(mut out) => {
                 if self.can_dkg_end() {
-                    info!("can_dkg_end==true. shares {} commitments {}", self.shares.len(), self.commitments.len());
+                    info!(
+                        "can_dkg_end==true. shares {} commitments {}",
+                        self.shares.len(),
+                        self.commitments.len()
+                    );
                     let dkg_end_msgs = self.dkg_ended().unwrap();
                     out.push(dkg_end_msgs);
                     self.move_to(States::Idle).unwrap();
@@ -187,10 +191,20 @@ impl SigningRound {
             }
             let mut shares: HashMap<usize, Scalar> = HashMap::new();
             for (party_id, party_shares) in &self.shares {
-                info!("building shares with k: {} v: party_shares[{}] len {} keys: {:?}", party_id, party.id, party_shares.len(), party_shares.keys());
-                shares.insert((*party_id as usize), party_shares[&party.id]);
+                info!(
+                    "building shares with k: {} v: party_shares[{}] len {} keys: {:?}",
+                    party_id,
+                    party.id,
+                    party_shares.len(),
+                    party_shares.keys()
+                );
+                shares.insert(*party_id as usize, party_shares[&party.id]);
             }
-            info!("party{}.compute_secret shares_for_id:{:?}", party.id, shares.keys());
+            info!(
+                "party{}.compute_secret shares_for_id:{:?}",
+                party.id,
+                shares.keys()
+            );
             if let Err(secret_error) = party.compute_secret(shares, &commitments) {
                 warn!(
                     "DKG round #{}: party {} compute_secret failed in : {}",
@@ -204,7 +218,11 @@ impl SigningRound {
             dkg_id: self.dkg_id.unwrap() as u64,
             signer_id: self.signer.signer_id as usize,
         });
-        info!("DKG_END round #{} signer_id {}", self.dkg_id.unwrap(), self.signer.signer_id);
+        info!(
+            "DKG_END round #{} signer_id {}",
+            self.dkg_id.unwrap(),
+            self.signer.signer_id
+        );
         Ok(dkg_end)
     }
 
@@ -301,7 +319,7 @@ mod test {
     use p256k1::scalar::Scalar;
     use rand_core::OsRng;
 
-    use crate::signing_round::{DkgPublicShare, SigningRound};
+    use crate::signing_round::{DkgEnd, DkgPublicShare, MessageTypes, SigningRound};
     use crate::state_machine::States;
 
     #[test]
@@ -341,5 +359,20 @@ mod test {
 
         // can_dkg_end should be true
         assert!(signing_round.can_dkg_end());
+    }
+
+    #[test]
+    fn dkg_ended() {
+        let mut rnd = OsRng::default();
+        let mut signing_round = SigningRound::new(1, 1, 1, vec![1]);
+        signing_round.reset(1);
+        if let Ok(end_msg) = signing_round.dkg_ended() {
+            match end_msg {
+                MessageTypes::DkgEnd(dkg_end) => assert_eq!(dkg_end.dkg_id, 1),
+                _ => {}
+            }
+        } else {
+            assert!(false)
+        }
     }
 }
