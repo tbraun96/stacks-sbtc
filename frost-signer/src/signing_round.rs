@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 pub use frost;
 use frost::common::{PolyCommitment, PublicNonce};
 use hashbrown::HashMap;
@@ -16,7 +17,7 @@ pub struct SigningRound {
     pub total: usize,
     pub signer: Signer,
     pub state: States,
-    pub commitments: HashMap<u32, PolyCommitment>,
+    pub commitments: BTreeMap<u32, PolyCommitment>,
     pub shares: HashMap<u32, HashMap<usize, Scalar>>,
 }
 
@@ -147,7 +148,7 @@ impl SigningRound {
             total,
             signer,
             state: States::Idle,
-            commitments: HashMap::new(),
+            commitments: BTreeMap::new(),
             shares: HashMap::new(),
         }
     }
@@ -185,10 +186,7 @@ impl SigningRound {
     pub fn dkg_ended(&self) -> Result<MessageTypes, String> {
         let parties = self.signer.frost_signer.parties.clone();
         for mut party in parties {
-            let mut commitments: Vec<PolyCommitment> = vec![];
-            for idx in 0..self.commitments.len() {
-                commitments.push(self.commitments.get(&((idx) as u32)).unwrap().to_owned());
-            }
+            let commitments: Vec<PolyCommitment> = self.commitments.clone().into_values().collect();
             let mut shares: HashMap<usize, Scalar> = HashMap::new();
             for (party_id, party_shares) in &self.shares {
                 info!(
