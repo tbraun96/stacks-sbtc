@@ -360,6 +360,7 @@ dependencies = [
  "hashbrown",
  "itertools",
  "p256k1",
+ "rand",
  "rand_core 0.5.1",
  "serde",
  "sha3",

@@ -315,14 +315,20 @@ mod test {
     use frost::schnorr::ID;
     use hashbrown::HashMap;
     use p256k1::scalar::Scalar;
-    use rand_core::OsRng;
+    use rand_core::{CryptoRng, OsRng, RngCore};
 
-    use crate::signing_round::{DkgEnd, DkgPublicShare, MessageTypes, SigningRound};
+    use crate::signing_round::{DkgPublicShare, MessageTypes, SigningRound};
     use crate::state_machine::States;
+
+    fn get_rng() -> impl RngCore + CryptoRng {
+        let rnd = OsRng::default();
+        //rand::rngs::StdRng::seed_from_u64(rnd.next_u64()) // todo: fix trait `rand_core::RngCore` is not implemented for `StdRng`
+        rnd
+    }
 
     #[test]
     fn dkg_public_share() {
-        let mut rnd = OsRng::default();
+        let mut rnd = get_rng();
         let mut signing_round = SigningRound::new(1, 1, 1, vec![1]);
         let public_share = DkgPublicShare {
             dkg_id: 0,
@@ -338,7 +344,7 @@ mod test {
 
     #[test]
     fn can_dkg_end() {
-        let mut rnd = OsRng::default();
+        let mut rnd = get_rng();
         let mut signing_round = SigningRound::new(1, 1, 1, vec![1]);
         // can_dkg_end starts out as false
         assert_eq!(false, signing_round.can_dkg_end());
@@ -361,7 +367,6 @@ mod test {
 
     #[test]
     fn dkg_ended() {
-        let mut rnd = OsRng::default();
         let mut signing_round = SigningRound::new(1, 1, 1, vec![1]);
         signing_round.reset(1);
         if let Ok(end_msg) = signing_round.dkg_ended() {
