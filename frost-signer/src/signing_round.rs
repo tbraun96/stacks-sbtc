@@ -12,7 +12,7 @@ use crate::state_machine::{StateMachine, States};
 type KeyShares = HashMap<usize, Scalar>;
 
 pub struct SigningRound {
-    pub dkg_id: Option<usize>,
+    pub dkg_id: Option<u64>,
     pub threshold: usize,
     pub total: usize,
     pub signer: Signer,
@@ -240,14 +240,14 @@ impl SigningRound {
         self.signer.frost_signer.parties[party_id].get_shares()
     }
 
-    pub fn reset(&mut self, dkg_id: usize) {
+    pub fn reset(&mut self, dkg_id: u64) {
         self.dkg_id = Some(dkg_id);
         self.commitments.clear();
         self.shares.clear();
     }
 
     pub fn dkg_begin(&mut self, dkg_begin: DkgBegin) -> Result<Vec<MessageTypes>, String> {
-        self.reset(dkg_begin.dkg_id as usize);
+        self.reset(dkg_begin.dkg_id);
         self.move_to(States::DkgDistribute).unwrap();
         let _party_state = self.signer.frost_signer.save();
 
