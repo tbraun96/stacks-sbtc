@@ -5,4 +5,5 @@ members = [
   "frost-signer",
   "frost-coordinator",
   "stacks-coordinator",
+  "stacks-signer",
   ]
