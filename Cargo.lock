@@ -176,7 +176,7 @@ dependencies = [
 [[package]]
 name = "blockstack-core"
 version = "0.0.1"
-source = "git+https://github.com/stacks-network/stacks-blockchain/?branch=3493-sbtc-peg-out-wire-format#041d10ac83e01b0aab43be1d720acb445f3ee861"
+source = "git+https://github.com/stacks-network/stacks-blockchain/?branch=3493-sbtc-peg-out-wire-format#a061a9e2d752dad40a157e91768f4f7aa32d6248"
 dependencies = [
  "chrono",
  "clarity",
@@ -335,7 +335,7 @@ dependencies = [
 [[package]]
 name = "clarity"
 version = "0.0.1"
-source = "git+https://github.com/stacks-network/stacks-blockchain/?branch=3493-sbtc-peg-out-wire-format#041d10ac83e01b0aab43be1d720acb445f3ee861"
+source = "git+https://github.com/stacks-network/stacks-blockchain/?branch=3493-sbtc-peg-out-wire-format#a061a9e2d752dad40a157e91768f4f7aa32d6248"
 dependencies = [
  "integer-sqrt",
  "lazy_static",
@@ -1146,9 +1146,9 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 
 [[package]]
 name = "p256k1"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8639660e093fd6dcba30d671524dfa4a47f5bff07e5e998ce57c260949f1c768"
+checksum = "c7a33ef89bc181a219684c34f995862979be5f6e5beb4cc1b5fc451d6c137511"
 dependencies = [
  "bindgen",
  "bitvec",
@@ -1822,7 +1822,7 @@ dependencies = [
 [[package]]
 name = "stacks-common"
 version = "0.0.1"
-source = "git+https://github.com/stacks-network/stacks-blockchain/?branch=3493-sbtc-peg-out-wire-format#041d10ac83e01b0aab43be1d720acb445f3ee861"
+source = "git+https://github.com/stacks-network/stacks-blockchain/?branch=3493-sbtc-peg-out-wire-format#a061a9e2d752dad40a157e91768f4f7aa32d6248"
 dependencies = [
  "chrono",
  "curve25519-dalek",
