@@ -1,7 +1,6 @@
-# Stacks-js-rs
+# YARPC (Yet Another RPC) Library
 
-Partial Implementation of Stacks on Rust using `stacks.js`. We use a simple
-RPC (remote procedure call) from Rust to JS using STDIO.
+A simple RPC (remote procedure call) from Rust to JS using STDIO.
 
 ## Deno Installation
 
@@ -27,8 +26,8 @@ Each message contains
   {"a":42}\n[0,-1,true]\n
   ```
 
-### Running `mirror.ts`
+### Running `mirror.ts` test
 
 ```sh
-deno run --allow-env --allow-read ./stacks-js-rs/js/mirror.ts
+deno run --allow-env --allow-read ./yarpc/js/test/mirror.ts
 ```
