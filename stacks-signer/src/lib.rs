@@ -1,4 +1,9 @@
+/// Module for defining the CLI and its operations
+pub mod cli;
+/// Module for secp256k1 operations
 pub mod secp256k1;
+/// Module for signer operations
+pub mod signer;
 
 // set via _compile-time_ envars
 const GIT_BRANCH: Option<&'static str> = option_env!("GIT_BRANCH");

@@ -1,10 +1,9 @@
-use std::fmt::Debug;
-
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
+use std::sync::mpsc;
 use tracing::{debug, info, warn};
 
 use crate::signing_round;
-
 // Message is the format over the wire
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Message {
@@ -27,12 +26,12 @@ impl HttpNetListen {
 // Http send (does not require mutable access, can be cloned to pass to threads)
 #[derive(Clone)]
 pub struct HttpNet {
-    pub stacks_node_url: String,
+    pub http_relay_url: String,
 }
 
 impl HttpNet {
-    pub fn new(stacks_node_url: String) -> Self {
-        HttpNet { stacks_node_url }
+    pub fn new(http_relay_url: String) -> Self {
+        HttpNet { http_relay_url }
     }
 }
 
@@ -52,7 +51,7 @@ impl NetListen for HttpNetListen {
     fn listen(&self) {}
 
     fn poll(&mut self, id: u32) {
-        let url = url_with_id(&self.net.stacks_node_url, id);
+        let url = url_with_id(&self.net.http_relay_url, id);
         debug!("poll {}", url);
         match ureq::get(&url).call() {
             Ok(response) => {
@@ -92,7 +91,7 @@ impl Net for HttpNet {
     type Error = HttpNetError;
 
     fn send_message(&self, msg: Message) -> Result<(), Self::Error> {
-        let req = ureq::post(&self.stacks_node_url);
+        let req = ureq::post(&self.http_relay_url);
         let bytes = bincode::serialize(&msg)?;
         let result = req.send_bytes(&bytes[..]);
 
@@ -103,11 +102,11 @@ impl Net for HttpNet {
                     &msg.msg,
                     bytes.len(),
                     &response,
-                    self.stacks_node_url
+                    self.http_relay_url
                 )
             }
             Err(e) => {
-                info!("post failed to {} {}", self.stacks_node_url, e);
+                info!("post failed to {} {}", self.http_relay_url, e);
                 return Err(Box::new(e).into());
             }
         };
@@ -123,6 +122,21 @@ pub enum HttpNetError {
 
     #[error("Network error: {0}")]
     NetworkError(#[from] Box<ureq::Error>),
+
+    #[error("Recv Error: {0}")]
+    RecvError(#[from] mpsc::RecvError),
+
+    #[error("Send Error")]
+    SendError,
+
+    #[error("DKG Error: {0}")]
+    DKGError(String),
+}
+
+impl From<mpsc::SendError<Message>> for HttpNetError {
+    fn from(_: mpsc::SendError<Message>) -> HttpNetError {
+        HttpNetError::SendError
+    }
 }
 
 fn url_with_id(base: &str, id: u32) -> String {

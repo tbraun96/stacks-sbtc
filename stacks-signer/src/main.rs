@@ -1,26 +1,10 @@
-use clap::{Parser, Subcommand};
+use clap::Parser;
+use frost_signer::config::Config;
 use frost_signer::logging;
-use stacks_signer::secp256k1::Secp256k1;
-
-///Command line interface for stacks signer
-#[derive(Parser)]
-#[command(author, version, about, long_about = None)]
-pub struct Cli {
-    /// Turn debugging information on
-    #[arg(short, long, action = clap::ArgAction::SetTrue)]
-    debug: bool,
-
-    /// Subcommand action to take
-    #[clap(subcommand)]
-    action: Action,
-}
-
-/// Possible actions that stacks signer can perform
-#[derive(Subcommand)]
-enum Action {
-    /// Generate Secp256k1 Private Key
-    Secp256k1(Secp256k1),
-}
+use stacks_signer::cli::{Cli, Command};
+use stacks_signer::signer::Signer;
+use tracing::info;
+use tracing::warn;
 
 fn main() {
     let cli = Cli::parse();
@@ -34,8 +18,23 @@ fn main() {
     .unwrap();
 
     // Determine what action the caller wishes to perform
-    match cli.action {
-        Action::Secp256k1(secp256k1) => {
+    match cli.command {
+        Command::Run { id, config } => {
+            //TODO: getConf from sBTC contract instead
+            match Config::from_path(&config) {
+                Ok(config) => {
+                    let mut signer = Signer::new(config, id);
+                    info!("{} signer id #{}", stacks_signer::version(), id); // sign-on message
+                    if let Err(e) = signer.start_p2p_sync() {
+                        warn!("An error occurred on the P2P Network: {}", e);
+                    }
+                }
+                Err(e) => {
+                    warn!("An error occurred reading config file {}: {}", config, e);
+                }
+            }
+        }
+        Command::Secp256k1(secp256k1) => {
             secp256k1.generate_private_key().unwrap();
         }
     };

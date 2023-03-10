@@ -9,17 +9,20 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-yarpc = { path = "../yarpc" }
 blockstack-core = { workspace = true }
 clap = { workspace = true }
-wtfrost = { workspace = true }
+frost-coordinator = { path = "../frost-coordinator" }
+frost-signer = { path = "../frost-signer" }
 rusqlite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+stacks-signer = { path = "../stacks-signer" }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
+wtfrost = { workspace = true }
+yarpc = { path = "../yarpc" }
 
 [dev-dependencies]
 mockall = { workspace = true }
