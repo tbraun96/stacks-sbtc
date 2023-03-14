@@ -3,7 +3,7 @@ use hashbrown::HashMap;
 use rand_core::{CryptoRng, OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 pub use wtfrost;
 use wtfrost::{
     common::{PolyCommitment, PublicNonce},
@@ -321,7 +321,7 @@ impl SigningRound {
 
         self.reset(dkg_begin.dkg_id, &mut rng);
         self.move_to(States::DkgDistribute)?;
-        
+
         let _party_state = self.signer.frost_signer.save();
 
         let mut msgs = vec![];

@@ -150,6 +150,7 @@ where
         Ok(())
     }
 
+    #[allow(non_snake_case)]
     pub fn sign_message(&mut self, msg: &[u8]) -> Result<(Signature, SchnorrProof), Error> {
         if self.aggregate_public_key == Point::default() {
             return Err(Error::NoAggregatePublicKey);
@@ -159,15 +160,11 @@ where
             self.collect_nonces()?;
 
             // check to see if the aggregate nonce R has even y
-            let ids: Vec<usize> = self
-                .public_nonces
-                .iter()
-                .map(|(i, _n)| *i as usize)
-                .collect();
+            let ids: Vec<usize> = self.public_nonces.keys().map(|i| *i as usize).collect();
             let nonces: Vec<PublicNonce> = self
                 .public_nonces
-                .iter()
-                .map(|(_i, n)| n.nonce.clone())
+                .values()
+                .map(|n| n.nonce.clone())
                 .collect();
             let (_, R) = compute::intermediate(msg, &ids, &nonces);
             if R.has_even_y() {
@@ -200,7 +197,7 @@ where
             self.threshold,
             polys.len()
         );
-        
+
         let mut aggregator =
             match v1::SignatureAggregator::new(self.total_keys, self.threshold, polys) {
                 Ok(aggregator) => aggregator,
