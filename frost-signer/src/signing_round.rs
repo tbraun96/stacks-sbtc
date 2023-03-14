@@ -60,6 +60,12 @@ impl StateMachine for SigningRound {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub enum DkgStatus {
+    Success,
+    Failure(String),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub enum MessageTypes {
     DkgBegin(DkgBegin),
     DkgEnd(DkgEnd),
@@ -96,6 +102,7 @@ pub struct DkgBegin {
 pub struct DkgEnd {
     pub dkg_id: u64,
     pub signer_id: usize,
+    pub status: DkgStatus,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -222,16 +229,18 @@ impl SigningRound {
                 shares.keys()
             );
             if let Err(secret_error) = party.compute_secret(shares, &commitments) {
-                panic!(
-                    "DKG round #{}: party {} compute_secret failed in : {}",
-                    self.dkg_id, party.id, secret_error
-                );
+                return Ok(MessageTypes::DkgEnd(DkgEnd {
+                    dkg_id: self.dkg_id,
+                    signer_id: self.signer.signer_id as usize,
+                    status: DkgStatus::Failure(secret_error.to_string()),
+                }));
             }
             info!("Party #{} group key {}", party.id, party.group_key);
         }
         let dkg_end = MessageTypes::DkgEnd(DkgEnd {
             dkg_id: self.dkg_id,
             signer_id: self.signer.signer_id as usize,
+            status: DkgStatus::Success,
         });
         info!(
             "DKG_END round #{} signer_id {}",
@@ -418,7 +427,7 @@ mod test {
     use rand_core::{CryptoRng, OsRng, RngCore};
     use wtfrost::{common::PolyCommitment, schnorr::ID, Scalar};
 
-    use crate::signing_round::{DkgPublicShare, MessageTypes, SigningRound};
+    use crate::signing_round::{DkgPublicShare, DkgStatus, MessageTypes, SigningRound};
     use crate::state_machine::States;
 
     fn get_rng() -> impl RngCore + CryptoRng {
@@ -469,13 +478,15 @@ mod test {
     #[test]
     fn dkg_ended() {
         let mut signing_round = SigningRound::new(1, 1, 1, vec![1]);
-        if let Ok(end_msg) = signing_round.dkg_ended() {
-            match end_msg {
-                MessageTypes::DkgEnd(dkg_end) => assert_eq!(dkg_end.dkg_id, 1),
-                _ => {}
-            }
-        } else {
-            assert!(false)
+        match signing_round.dkg_ended() {
+            Ok(dkg_end) => match dkg_end {
+                MessageTypes::DkgEnd(dkg_end) => match dkg_end.status {
+                    DkgStatus::Failure(_) => assert!(true),
+                    _ => assert!(false),
+                },
+                _ => assert!(false),
+            },
+            _ => assert!(false),
         }
     }
 }
