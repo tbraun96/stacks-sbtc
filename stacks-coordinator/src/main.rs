@@ -35,6 +35,24 @@ fn main() {
                                 warn!("An error occurred during DKG round: {}", e);
                             }
                         }
+                        Command::DkgSign => {
+                            info!("Running DKG Round");
+                            if let Err(e) = coordinator.run_dkg_round() {
+                                warn!("An error occurred during DKG round: {}", e);
+                            };
+                            info!("Running Signing Round");
+                            let (signature, schnorr_proof) =
+                                match coordinator.sign_message("Hello, world!") {
+                                    Ok((sig, proof)) => (sig, proof),
+                                    Err(e) => {
+                                        panic!("signing message failed: {}", e);
+                                    }
+                                };
+                            info!(
+                                "Got good signature ({},{}) and schnorr proof ({},{})",
+                                &signature.R, &signature.z, &schnorr_proof.r, &schnorr_proof.s
+                            );
+                        }
                     };
                 }
                 Err(e) => {
