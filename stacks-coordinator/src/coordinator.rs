@@ -2,6 +2,8 @@ use bitcoin::psbt::serialize::Serialize;
 use frost_coordinator::create_coordinator;
 use frost_signer::net::HttpNetListen;
 use std::sync::mpsc;
+use std::sync::mpsc::Sender;
+use std::{thread, time};
 use wtfrost::{bip340::SchnorrProof, common::Signature, Point};
 
 use crate::config::Config;
@@ -12,9 +14,10 @@ use crate::stacks_node;
 // Traits in scope
 use crate::bitcoin_node::{BitcoinNode, LocalhostBitcoinNode};
 use crate::peg_queue::{PegQueue, SbtcOp, SqlitePegQueue};
-use crate::stacks_node::{LocalhostStacksNode, StacksNode};
+use crate::stacks_node::StacksNode;
 
 use crate::error::Result;
+use crate::stacks_node::client::NodeClient;
 
 type FrostCoordinator = frost_coordinator::coordinator::Coordinator<HttpNetListen>;
 
@@ -36,42 +39,60 @@ pub trait Coordinator: Sized {
     fn bitcoin_node(&self) -> &Self::BitcoinNode;
 
     // Provided methods
-    fn run(mut self, commands: mpsc::Receiver<Command>) -> Result<()> {
-        loop {
-            match self.peg_queue().sbtc_op()? {
-                Some(SbtcOp::PegIn(op)) => self.peg_in(op)?,
-                Some(SbtcOp::PegOutRequest(op)) => self.peg_out(op)?,
-                None => self.peg_queue().poll(self.stacks_node())?,
-            }
+    fn run(mut self) -> Result<()> {
+        let (sender, receiver) = mpsc::channel::<Command>();
+        Self::poll_ping_thread(sender);
 
-            match commands.try_recv() {
-                Ok(Command::Stop) => break,
-                Err(mpsc::TryRecvError::Disconnected) => break,
-                Err(mpsc::TryRecvError::Empty) => continue,
+        loop {
+            match receiver.recv().expect("thread receive err {0}") {
+                Command::Stop => break,
+                Command::Timeout => {
+                    self.peg_queue()
+                        .poll(self.stacks_node())
+                        .expect("peg_queue poll error {0}");
+                    self.process_queue().expect("peg queue error {0}");
+                }
             }
         }
         Ok(())
+    }
+
+    fn poll_ping_thread(sender: Sender<Command>) {
+        thread::spawn(move || loop {
+            sender
+                .send(Command::Timeout)
+                .expect("thread send error {0}");
+            thread::sleep(time::Duration::from_millis(500));
+        });
+    }
+
+    fn process_queue(&mut self) -> Result<()> {
+        match self.peg_queue().sbtc_op()? {
+            Some(SbtcOp::PegIn(op)) => self.peg_in(op),
+            Some(SbtcOp::PegOutRequest(op)) => self.peg_out(op),
+            None => Ok(()),
+        }
     }
 }
 
 // Private helper functions
 trait CoordinatorHelpers: Coordinator {
     fn peg_in(&mut self, op: stacks_node::PegInOp) -> Result<()> {
-        let tx = self.fee_wallet().stacks_mut().mint(&op)?;
-        self.stacks_node().broadcast_transaction(&tx);
+        let _tx = self.fee_wallet().stacks_mut().mint(&op)?;
+        //self.stacks_node().broadcast_transaction(&tx);
         Ok(())
     }
 
     fn peg_out(&mut self, op: stacks_node::PegOutRequestOp) -> Result<()> {
         let _stacks = self.fee_wallet().stacks_mut();
-        let burn_tx = self.fee_wallet().stacks_mut().burn(&op)?;
+        let _burn_tx = self.fee_wallet().stacks_mut().burn(&op)?;
         let fulfill_tx = self.fee_wallet().bitcoin_mut().fulfill_peg_out(&op)?;
 
         //TODO: what do we do with the returned signature?
         self.frost_coordinator_mut()
             .sign_message(&fulfill_tx.serialize())?;
 
-        self.stacks_node().broadcast_transaction(&burn_tx);
+        //self.stacks_node().broadcast_transaction(&burn_tx);
         self.bitcoin_node().broadcast_transaction(&fulfill_tx);
         Ok(())
     }
@@ -81,11 +102,14 @@ impl<T: Coordinator> CoordinatorHelpers for T {}
 
 pub enum Command {
     Stop,
+    Timeout,
 }
 
 pub struct StacksCoordinator {
     _config: Config,
     frost_coordinator: FrostCoordinator,
+    local_peg_queue: SqlitePegQueue,
+    local_stacks_node: NodeClient,
 }
 
 impl StacksCoordinator {
@@ -101,9 +125,12 @@ impl StacksCoordinator {
 impl TryFrom<Config> for StacksCoordinator {
     type Error = String;
     fn try_from(config: Config) -> std::result::Result<Self, String> {
+        let stacks_rpc_url = config.stacks_node_rpc_url.clone();
         Ok(Self {
             frost_coordinator: create_coordinator(config.signer_config_path.clone())?,
             _config: config,
+            local_peg_queue: SqlitePegQueue::in_memory(0).unwrap(),
+            local_stacks_node: NodeClient::new(&stacks_rpc_url),
         })
     }
 }
@@ -111,11 +138,11 @@ impl TryFrom<Config> for StacksCoordinator {
 impl Coordinator for StacksCoordinator {
     type PegQueue = SqlitePegQueue;
     type FeeWallet = WrapPegWallet;
-    type StacksNode = LocalhostStacksNode;
+    type StacksNode = NodeClient;
     type BitcoinNode = LocalhostBitcoinNode;
 
     fn peg_queue(&self) -> &Self::PegQueue {
-        todo!()
+        &self.local_peg_queue
     }
 
     fn fee_wallet(&mut self) -> &mut Self::FeeWallet {
@@ -131,7 +158,7 @@ impl Coordinator for StacksCoordinator {
     }
 
     fn stacks_node(&self) -> &Self::StacksNode {
-        todo!()
+        &self.local_stacks_node
     }
 
     fn bitcoin_node(&self) -> &Self::BitcoinNode {

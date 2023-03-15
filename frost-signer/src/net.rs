@@ -141,6 +141,6 @@ impl From<mpsc::SendError<Message>> for HttpNetError {
 
 fn url_with_id(base: &str, id: u32) -> String {
     let mut url = base.to_owned();
-    url.push_str(&format!("?id={}", id));
+    url.push_str(&format!("?id={id}"));
     url
 }

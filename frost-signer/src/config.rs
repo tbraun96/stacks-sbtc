@@ -36,6 +36,6 @@ pub struct Cli {
 impl Config {
     pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Config, String> {
         let content = fs::read_to_string(path).map_err(|e| format!("Invalid path: {}", &e))?;
-        toml::from_str(&content).map_err(|e| format!("Invalid toml: {}", e))
+        toml::from_str(&content).map_err(|e| format!("Invalid toml: {e}"))
     }
 }

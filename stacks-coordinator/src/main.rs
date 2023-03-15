@@ -2,7 +2,7 @@ use clap::Parser;
 use frost_signer::logging;
 use stacks_coordinator::cli::{Cli, Command};
 use stacks_coordinator::config::Config;
-use stacks_coordinator::coordinator::StacksCoordinator;
+use stacks_coordinator::coordinator::{Coordinator, StacksCoordinator};
 use tracing::{info, warn};
 
 fn main() {
@@ -27,7 +27,9 @@ fn main() {
                         Command::Run => {
                             info!("Running coordinator");
                             //TODO: set up coordination with the stacks node
-                            //stacks_coordinator.run();
+                            if let Err(e) = coordinator.run() {
+                                warn!("An error occurred during DKG round: {}", e);
+                            }
                         }
                         Command::Dkg => {
                             info!("Running DKG Round");
@@ -45,7 +47,7 @@ fn main() {
                                 match coordinator.sign_message("Hello, world!") {
                                     Ok((sig, proof)) => (sig, proof),
                                     Err(e) => {
-                                        panic!("signing message failed: {}", e);
+                                        panic!("signing message failed: {e}");
                                     }
                                 };
                             info!(
