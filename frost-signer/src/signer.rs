@@ -36,8 +36,8 @@ impl Signer {
 
     fn start_signing_round(&self, net: &HttpNet, rx: Receiver<Message>) -> Result<(), Error> {
         let mut round = SigningRound::from(self);
-
         loop {
+            // Retreive a message from coordinator
             let inbound = rx.recv()?; // blocking
             let outbounds = round.process(inbound.msg).map_err(Error::DKGError)?;
             for out in outbounds {
