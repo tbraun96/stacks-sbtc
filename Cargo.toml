@@ -9,6 +9,7 @@ members = [
   "yarpc"]
 
 [workspace.dependencies]
+base58 = "0.2"
 blockstack-core = { git = "https://github.com/stacks-network/stacks-blockchain/", branch = "3493-sbtc-peg-out-wire-format" }
 clap = { version = "4.1.1", features = ["derive"] }
 wtfrost = { git = "https://github.com/Trust-Machines/frost", branch = "main" }

@@ -327,7 +327,7 @@ where
         Ok(self.aggregate_public_key)
     }
 
-    pub fn get_aggregate_public_key(&mut self) -> Result<Point, Error> {
+    pub fn get_aggregate_public_key(&self) -> Result<Point, Error> {
         if self.aggregate_public_key == Point::default() {
             Err(Error::NoAggregatePublicKey)
         } else {

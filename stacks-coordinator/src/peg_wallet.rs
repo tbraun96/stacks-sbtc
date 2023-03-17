@@ -46,7 +46,9 @@ pub trait PegWallet {
 #[derive(Serialize)]
 pub struct PegWalletAddress(pub [u8; 32]);
 
-pub struct WrapPegWallet {}
+pub struct WrapPegWallet {
+    pub(crate) bitcoin_wallet: FileBitcoinWallet,
+}
 
 impl PegWallet for WrapPegWallet {
     type StacksWallet = FileStacksWallet;
@@ -57,7 +59,7 @@ impl PegWallet for WrapPegWallet {
     }
 
     fn bitcoin_mut(&mut self) -> &mut Self::BitcoinWallet {
-        todo!()
+        &mut self.bitcoin_wallet
     }
 }
 

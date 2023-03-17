@@ -1,28 +1,31 @@
-use bitcoin::psbt::serialize::Serialize;
+use bitcoin::{
+    psbt::Prevouts, secp256k1::Error as Secp256k1Error, util::sighash::Error as SighashError,
+    SchnorrSighashType, XOnlyPublicKey,
+};
+
 use frost_coordinator::{coordinator::Error as FrostCoordinatorError, create_coordinator};
 use frost_signer::net::{Error as HttpNetError, HttpNetListen};
 use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 use std::{thread, time};
-use wtfrost::{bip340::SchnorrProof, common::Signature, Point};
+use tracing::info;
+use wtfrost::{bip340::SchnorrProof, common::Signature};
 
 use crate::config::{Config, Error as ConfigError};
-use crate::peg_wallet::{BitcoinWallet, Error as PegWalletError, PegWallet};
+use crate::peg_wallet::{BitcoinWallet, Error as PegWalletError, FileBitcoinWallet, PegWallet};
 use crate::peg_wallet::{StacksWallet, WrapPegWallet};
 use crate::stacks_node;
 // Traits in scope
-use crate::bitcoin_node::{BitcoinNode, LocalhostBitcoinNode};
+use crate::bitcoin_node::{BitcoinNode, BitcoinTransaction, LocalhostBitcoinNode};
 use crate::peg_queue::{
     Error as PegQueueError, PegQueue, SbtcOp, SqlitePegQueue, SqlitePegQueueError,
 };
-use crate::stacks_node::StacksNode;
-
 use crate::stacks_node::client::NodeClient;
+use crate::stacks_node::StacksNode;
 
 type FrostCoordinator = frost_coordinator::coordinator::Coordinator<HttpNetListen>;
 
-// TODO: Define these types
-pub type PublicKey = Point;
+pub type PublicKey = XOnlyPublicKey;
 
 /// Helper that uses this module's error type
 pub type Result<T> = std::result::Result<T, Error>;
@@ -48,6 +51,12 @@ pub enum Error {
     /// Error occurred in the Sqlite Peg Queue
     #[error("Sqlite Peg Queue Error: {0}")]
     SqlitePegQueueError(#[from] SqlitePegQueueError),
+    /// "Bitcoin Secp256k1 Error"
+    #[error("Bitcoin Secp256k1 Error")]
+    BitcoinSecp256k1(#[from] Secp256k1Error),
+    /// "Bitcoin Sighash Error"
+    #[error("Bitcoin Sighash Error")]
+    BitcoinSighash(#[from] SighashError),
 }
 
 pub trait Coordinator: Sized {
@@ -112,15 +121,48 @@ trait CoordinatorHelpers: Coordinator {
     fn peg_out(&mut self, op: stacks_node::PegOutRequestOp) -> Result<()> {
         let _stacks = self.fee_wallet().stacks_mut();
         let _burn_tx = self.fee_wallet().stacks_mut().burn(&op)?;
-        let fulfill_tx = self.fee_wallet().bitcoin_mut().fulfill_peg_out(&op)?;
-
-        //TODO: what do we do with the returned signature?
-        self.frost_coordinator_mut()
-            .sign_message(&fulfill_tx.serialize())?;
-
         //self.stacks_node().broadcast_transaction(&burn_tx);
+
+        let fulfill_tx = self.btc_fulfill_peg_out(&op)?;
         self.bitcoin_node().broadcast_transaction(&fulfill_tx);
         Ok(())
+    }
+
+    fn btc_fulfill_peg_out(
+        &mut self,
+        op: &stacks_node::PegOutRequestOp,
+    ) -> Result<BitcoinTransaction> {
+        let mut fulfill_tx = self.fee_wallet().bitcoin_mut().fulfill_peg_out(op)?;
+        let pubkey = self.frost_coordinator().get_aggregate_public_key()?;
+        let _xonly_pubkey =
+            PublicKey::from_slice(&pubkey.x().to_bytes()).map_err(Error::BitcoinSecp256k1)?;
+        let mut comp = bitcoin::util::sighash::SighashCache::new(&fulfill_tx);
+        let taproot_sighash = comp.taproot_signature_hash(
+            1,
+            &Prevouts::All(&[&fulfill_tx.output[0]]),
+            None,
+            None,
+            SchnorrSighashType::All,
+        )?;
+
+        let (_frost_sig, schnorr_proof) = self
+            .frost_coordinator_mut()
+            .sign_message(&taproot_sighash)?;
+
+        info!(
+            "Fulfill Tx {:?} SchnorrProof ({},{})",
+            &fulfill_tx, schnorr_proof.r, schnorr_proof.s
+        );
+
+        let finalized = [
+            schnorr_proof.to_bytes().as_ref(),
+            &[SchnorrSighashType::All as u8],
+        ]
+        .concat();
+        let finalized_b58 = bitcoin::util::base58::encode_slice(&finalized);
+        info!("CALC SIG ({}) {}", finalized.len(), finalized_b58);
+        fulfill_tx.input[0].witness.push(finalized);
+        Ok(fulfill_tx)
     }
 }
 
@@ -136,11 +178,13 @@ pub struct StacksCoordinator {
     frost_coordinator: FrostCoordinator,
     local_peg_queue: SqlitePegQueue,
     local_stacks_node: NodeClient,
+    pub local_fee_wallet: WrapPegWallet,
 }
 
 impl StacksCoordinator {
     pub fn run_dkg_round(&mut self) -> Result<PublicKey> {
-        Ok(self.frost_coordinator.run_distributed_key_generation()?)
+        let p = self.frost_coordinator.run_distributed_key_generation()?;
+        PublicKey::from_slice(&p.x().to_bytes()).map_err(Error::BitcoinSecp256k1)
     }
 
     pub fn sign_message(&mut self, message: &str) -> Result<(Signature, SchnorrProof)> {
@@ -157,6 +201,9 @@ impl TryFrom<Config> for StacksCoordinator {
             _config: config,
             local_peg_queue: SqlitePegQueue::in_memory(0)?,
             local_stacks_node: NodeClient::new(&stacks_rpc_url),
+            local_fee_wallet: WrapPegWallet {
+                bitcoin_wallet: FileBitcoinWallet {},
+            },
         })
     }
 }
@@ -172,15 +219,15 @@ impl Coordinator for StacksCoordinator {
     }
 
     fn fee_wallet(&mut self) -> &mut Self::FeeWallet {
-        todo!()
+        &mut self.local_fee_wallet
     }
 
     fn frost_coordinator(&self) -> &FrostCoordinator {
-        todo!()
+        &self.frost_coordinator
     }
 
     fn frost_coordinator_mut(&mut self) -> &mut FrostCoordinator {
-        todo!()
+        &mut self.frost_coordinator
     }
 
     fn stacks_node(&self) -> &Self::StacksNode {
@@ -193,4 +240,49 @@ impl Coordinator for StacksCoordinator {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use crate::config::Config;
+    use crate::coordinator::{CoordinatorHelpers, StacksCoordinator};
+    use crate::stacks_node::PegOutRequestOp;
+    use bitcoin::consensus::Encodable;
+    use blockstack_lib::burnchains::Txid;
+    use blockstack_lib::chainstate::stacks::address::{PoxAddress, PoxAddressType20};
+    use blockstack_lib::types::chainstate::BurnchainHeaderHash;
+
+    #[ignore]
+    #[test]
+    fn btc_fulfill_peg_out() {
+        let config = Config {
+            sbtc_contract: "".to_string(),
+            stacks_private_key: "".to_string(),
+            bitcoin_private_key: "".to_string(),
+            stacks_node_rpc_url: "".to_string(),
+            bitcoin_node_rpc_url: "".to_string(),
+            frost_dkg_round_id: 0,
+            signer_config_path: "conf/signer.toml".to_string(),
+        };
+        // todo: make StacksCoordinator with mock FrostCoordinator to locally generate PublicKey and Signature for unit test
+        let mut sc = StacksCoordinator::try_from(config).unwrap();
+        let recipient = PoxAddress::Addr20(false, PoxAddressType20::P2WPKH, [0; 20]);
+        let peg_wallet_address = PoxAddress::Addr20(false, PoxAddressType20::P2WPKH, [0; 20]);
+        let op = PegOutRequestOp {
+            amount: 0,
+            recipient: recipient,
+            signature: blockstack_lib::util::secp256k1::MessageSignature([0; 65]),
+            peg_wallet_address: peg_wallet_address,
+            fulfillment_fee: 0,
+            memo: vec![],
+            txid: Txid([0; 32]),
+            vtxindex: 0,
+            block_height: 0,
+            burn_header_hash: BurnchainHeaderHash([0; 32]),
+        };
+        let btc_tx_result = sc.btc_fulfill_peg_out(&op);
+        assert!(btc_tx_result.is_ok());
+        let btc_tx = btc_tx_result.unwrap();
+        let mut btc_tx_encoded: Vec<u8> = vec![];
+        btc_tx.consensus_encode(&mut btc_tx_encoded).unwrap();
+        let verify_result = bitcoin::bitcoinconsensus::verify(&[], 100, &btc_tx_encoded, 0);
+        assert!(verify_result.is_ok())
+    }
+}
