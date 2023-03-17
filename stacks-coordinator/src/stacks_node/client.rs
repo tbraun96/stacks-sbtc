@@ -1,3 +1,4 @@
+use crate::stacks_node::{Error as StacksNodeError, PegInOp, PegOutRequestOp, StacksNode};
 use blockstack_lib::{
     chainstate::stacks::address::StacksAddressExtensions, chainstate::stacks::StacksTransaction,
     codec::StacksMessageCodec, types::chainstate::StacksAddress,
@@ -5,7 +6,13 @@ use blockstack_lib::{
 use reqwest::blocking::Client;
 use serde_json::{from_value, Value};
 
-use crate::stacks_node::{PegInOp, PegOutRequestOp, StacksNode};
+/// Kinds of common errors used by stacks coordinator
+#[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
+pub enum Error {
+    #[error("Stacks Node Error: {0}")]
+    StacksNodeError(#[from] StacksNodeError),
+}
 
 pub struct NodeClient {
     node_url: String,
@@ -26,56 +33,63 @@ impl NodeClient {
 }
 
 impl StacksNode for NodeClient {
-    fn get_peg_in_ops(&self, block_height: u64) -> Vec<PegInOp> {
+    fn get_peg_in_ops(&self, block_height: u64) -> Result<Vec<PegInOp>, StacksNodeError> {
         let url = self.build_url(&format!("/v2/burn_ops/peg_in/{block_height}"));
-
-        self.client
+        Ok(self
+            .client
             .get(url)
             .send()
             .and_then(|res| res.json::<Value>())
-            .map(|json| from_value(json["peg_in"].clone()).unwrap())
-            .unwrap()
+            .map(|json| from_value(json["peg_in"].clone()))??)
     }
 
-    fn get_peg_out_request_ops(&self, block_height: u64) -> Vec<PegOutRequestOp> {
+    fn get_peg_out_request_ops(
+        &self,
+        block_height: u64,
+    ) -> Result<Vec<PegOutRequestOp>, StacksNodeError> {
         let url = self.build_url(&format!("/v2/burn_ops/peg_out_request/{block_height}"));
-
-        self.client
+        Ok(self
+            .client
             .get(url)
             .send()
             .and_then(|res| res.json::<Value>())
-            .map(|json| from_value(json["peg_in"].clone()).unwrap())
-            .unwrap()
+            .map(|json| from_value(json["peg_in"].clone()))??)
     }
 
-    fn burn_block_height(&self) -> u64 {
+    fn burn_block_height(&self) -> Result<u64, StacksNodeError> {
         let url = self.build_url("/v2/info");
 
         self.client
             .get(url)
             .send()
             .and_then(|res| res.json::<Value>())
-            .map(|json| json["burn_block_height"].as_u64().unwrap())
-            .unwrap()
+            .map(|json| {
+                json["burn_block_height"]
+                    .as_u64()
+                    .ok_or_else(|| StacksNodeError::InvalidJsonEntry)
+            })?
     }
 
-    fn next_nonce(&self, addr: StacksAddress) -> u64 {
+    fn next_nonce(&self, addr: StacksAddress) -> Result<u64, StacksNodeError> {
         let url = self.build_url(&format!("/v2/accounts/{}", addr.to_b58()));
 
         self.client
             .get(url)
             .send()
             .and_then(|res| res.json::<Value>())
-            .map(|json| json["nonce"].as_u64().unwrap())
-            .unwrap()
-            + 1
+            .map(|json| {
+                json["nonce"]
+                    .as_u64()
+                    .map(|val| val + 1)
+                    .ok_or_else(|| StacksNodeError::InvalidJsonEntry)
+            })?
     }
 
-    fn broadcast_transaction(&self, tx: &StacksTransaction) {
+    fn broadcast_transaction(&self, tx: &StacksTransaction) -> Result<(), StacksNodeError> {
         let url = self.build_url("/v2/transactions");
 
         let mut buffer = vec![];
-        tx.consensus_serialize(&mut buffer).unwrap();
+        tx.consensus_serialize(&mut buffer)?;
 
         let _return = self
             .client
@@ -83,8 +97,8 @@ impl StacksNode for NodeClient {
             .body(buffer)
             // .json(tx)
             .send()
-            .and_then(|res| res.json::<Value>())
-            .unwrap();
+            .and_then(|res| res.json::<Value>())?;
+        Ok(())
     }
 }
 
@@ -107,23 +121,25 @@ mod tests {
     fn send_tx() {
         let client = NodeClient::new("http://localhost:20443");
 
-        client.broadcast_transaction(&StacksTransaction {
-            version: TransactionVersion::Testnet,
-            chain_id: 0,
-            auth: TransactionAuth::Standard(TransactionSpendingCondition::Singlesig(
-                SinglesigSpendingCondition {
-                    hash_mode: SinglesigHashMode::P2PKH,
-                    signer: Hash160([0; 20]),
-                    nonce: 0,
-                    tx_fee: 0,
-                    key_encoding: TransactionPublicKeyEncoding::Uncompressed,
-                    signature: MessageSignature([0; 65]),
-                },
-            )),
-            anchor_mode: TransactionAnchorMode::Any,
-            post_condition_mode: TransactionPostConditionMode::Allow,
-            post_conditions: vec![],
-            payload: TransactionPayload::Coinbase(CoinbasePayload([0; 32]), None),
-        });
+        client
+            .broadcast_transaction(&StacksTransaction {
+                version: TransactionVersion::Testnet,
+                chain_id: 0,
+                auth: TransactionAuth::Standard(TransactionSpendingCondition::Singlesig(
+                    SinglesigSpendingCondition {
+                        hash_mode: SinglesigHashMode::P2PKH,
+                        signer: Hash160([0; 20]),
+                        nonce: 0,
+                        tx_fee: 0,
+                        key_encoding: TransactionPublicKeyEncoding::Uncompressed,
+                        signature: MessageSignature([0; 65]),
+                    },
+                )),
+                anchor_mode: TransactionAnchorMode::Any,
+                post_condition_mode: TransactionPostConditionMode::Allow,
+                post_conditions: vec![],
+                payload: TransactionPayload::Coinbase(CoinbasePayload([0; 32]), None),
+            })
+            .unwrap();
     }
 }

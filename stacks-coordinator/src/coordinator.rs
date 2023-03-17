@@ -1,28 +1,54 @@
 use bitcoin::psbt::serialize::Serialize;
-use frost_coordinator::create_coordinator;
-use frost_signer::net::HttpNetListen;
+use frost_coordinator::{coordinator::Error as FrostCoordinatorError, create_coordinator};
+use frost_signer::net::{Error as HttpNetError, HttpNetListen};
 use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 use std::{thread, time};
 use wtfrost::{bip340::SchnorrProof, common::Signature, Point};
 
-use crate::config::Config;
-use crate::peg_wallet::{BitcoinWallet, PegWallet};
+use crate::config::{Config, Error as ConfigError};
+use crate::peg_wallet::{BitcoinWallet, Error as PegWalletError, PegWallet};
 use crate::peg_wallet::{StacksWallet, WrapPegWallet};
 use crate::stacks_node;
-
 // Traits in scope
 use crate::bitcoin_node::{BitcoinNode, LocalhostBitcoinNode};
-use crate::peg_queue::{PegQueue, SbtcOp, SqlitePegQueue};
+use crate::peg_queue::{
+    Error as PegQueueError, PegQueue, SbtcOp, SqlitePegQueue, SqlitePegQueueError,
+};
 use crate::stacks_node::StacksNode;
 
-use crate::error::Result;
 use crate::stacks_node::client::NodeClient;
 
 type FrostCoordinator = frost_coordinator::coordinator::Coordinator<HttpNetListen>;
 
 // TODO: Define these types
 pub type PublicKey = Point;
+
+/// Helper that uses this module's error type
+pub type Result<T> = std::result::Result<T, Error>;
+
+/// Kinds of common errors used by stacks coordinator
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    /// Error occurred with the HTTP Relay
+    #[error("Http Network Error: {0}")]
+    HttpNetError(#[from] HttpNetError),
+    /// Error occurred reading Config
+    #[error("Config Error: {0}")]
+    ConfigError(#[from] ConfigError),
+    /// Error occurred in the Peg Queue
+    #[error("Peg Queue Error: {0}")]
+    PegQueueError(#[from] PegQueueError),
+    /// Error occurred in the Peg Wallet
+    #[error("Peg Wallet Error: {0}")]
+    PegWalletError(#[from] PegWalletError),
+    /// Error occurred in the Frost Coordinator
+    #[error("Frost Coordinator Error: {0}")]
+    FrostCoordinatorError(#[from] FrostCoordinatorError),
+    /// Error occurred in the Sqlite Peg Queue
+    #[error("Sqlite Peg Queue Error: {0}")]
+    SqlitePegQueueError(#[from] SqlitePegQueueError),
+}
 
 pub trait Coordinator: Sized {
     type PegQueue: PegQueue;
@@ -123,13 +149,13 @@ impl StacksCoordinator {
 }
 
 impl TryFrom<Config> for StacksCoordinator {
-    type Error = String;
-    fn try_from(config: Config) -> std::result::Result<Self, String> {
+    type Error = Error;
+    fn try_from(config: Config) -> Result<Self> {
         let stacks_rpc_url = config.stacks_node_rpc_url.clone();
         Ok(Self {
             frost_coordinator: create_coordinator(config.signer_config_path.clone())?,
             _config: config,
-            local_peg_queue: SqlitePegQueue::in_memory(0).unwrap(),
+            local_peg_queue: SqlitePegQueue::in_memory(0)?,
             local_stacks_node: NodeClient::new(&stacks_rpc_url),
         })
     }

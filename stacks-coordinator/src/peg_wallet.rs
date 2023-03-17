@@ -5,22 +5,33 @@ use serde::Serialize;
 
 use crate::bitcoin_node;
 use crate::bitcoin_node::BitcoinTransaction;
-use crate::error::Result;
 use crate::stacks_node;
 use crate::stacks_node::{PegInOp, PegOutRequestOp};
 use crate::stacks_transaction::StacksTransaction;
+use crate::stacks_wallet_js::Error as StacksWalletJsError;
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("Stacks Wallet JS Error: {0}")]
+    StacksWalletJs(#[from] StacksWalletJsError),
+    #[error("type conversion error from blockstack::bitcoin to bitcoin:: {0}")]
+    ConversionError(#[from] bitcoin::hashes::Error),
+    #[error("type conversion error blockstack::bitcoin::hashes:hex {0}")]
+    ConversionErrorHex(#[from] bitcoin::hashes::hex::Error),
+}
 
 pub trait StacksWallet {
-    fn mint(&mut self, op: &stacks_node::PegInOp) -> Result<StacksTransaction>;
-    fn burn(&mut self, op: &stacks_node::PegOutRequestOp) -> Result<StacksTransaction>;
-    fn set_wallet_address(&mut self, address: PegWalletAddress) -> Result<StacksTransaction>;
+    fn mint(&mut self, op: &stacks_node::PegInOp) -> Result<StacksTransaction, Error>;
+    fn burn(&mut self, op: &stacks_node::PegOutRequestOp) -> Result<StacksTransaction, Error>;
+    fn set_wallet_address(&mut self, address: PegWalletAddress)
+        -> Result<StacksTransaction, Error>;
 }
 
 pub trait BitcoinWallet {
     fn fulfill_peg_out(
         &self,
         op: &stacks_node::PegOutRequestOp,
-    ) -> Result<bitcoin_node::BitcoinTransaction>;
+    ) -> Result<bitcoin_node::BitcoinTransaction, Error>;
 }
 
 pub trait PegWallet {
@@ -53,15 +64,18 @@ impl PegWallet for WrapPegWallet {
 pub struct FileStacksWallet {}
 
 impl StacksWallet for FileStacksWallet {
-    fn mint(&mut self, _op: &PegInOp) -> Result<StacksTransaction> {
+    fn mint(&mut self, _op: &PegInOp) -> Result<StacksTransaction, Error> {
         todo!()
     }
 
-    fn burn(&mut self, _op: &PegOutRequestOp) -> Result<StacksTransaction> {
+    fn burn(&mut self, _op: &PegOutRequestOp) -> Result<StacksTransaction, Error> {
         todo!()
     }
 
-    fn set_wallet_address(&mut self, _address: PegWalletAddress) -> Result<StacksTransaction> {
+    fn set_wallet_address(
+        &mut self,
+        _address: PegWalletAddress,
+    ) -> Result<StacksTransaction, Error> {
         todo!()
     }
 }
@@ -69,7 +83,7 @@ impl StacksWallet for FileStacksWallet {
 pub struct FileBitcoinWallet {}
 
 impl BitcoinWallet for FileBitcoinWallet {
-    fn fulfill_peg_out(&self, op: &PegOutRequestOp) -> Result<BitcoinTransaction> {
+    fn fulfill_peg_out(&self, op: &PegOutRequestOp) -> Result<BitcoinTransaction, Error> {
         let bitcoin_txid = bitcoin::Txid::from_slice(op.txid.as_bytes())?;
         let utxo = bitcoin::OutPoint {
             txid: bitcoin_txid,

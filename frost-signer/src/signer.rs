@@ -1,6 +1,6 @@
 use crate::config::Config;
-use crate::net::{HttpNet, HttpNetError as Error, HttpNetListen, Message, Net, NetListen};
-use crate::signing_round::SigningRound;
+use crate::net::{Error as HttpNetError, HttpNet, HttpNetListen, Message, Net, NetListen};
+use crate::signing_round::{Error as SigningRoundError, SigningRound};
 use serde::Deserialize;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
@@ -39,7 +39,7 @@ impl Signer {
         loop {
             // Retreive a message from coordinator
             let inbound = rx.recv()?; // blocking
-            let outbounds = round.process(inbound.msg).map_err(Error::DKGError)?;
+            let outbounds = round.process(inbound.msg)?;
             for out in outbounds {
                 let msg = Message {
                     msg: out,
@@ -48,6 +48,27 @@ impl Signer {
                 net.send_message(msg)?;
             }
         }
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("Http Network Error: {0}")]
+    HttpNetError(#[from] HttpNetError),
+
+    #[error("Signing Round Error: {0}")]
+    SigningRoundError(#[from] SigningRoundError),
+
+    #[error("Failed to retrieve message: {0}")]
+    RecvError(#[from] mpsc::RecvError),
+
+    #[error("Failed to send message")]
+    SendError,
+}
+
+impl From<mpsc::SendError<Message>> for Error {
+    fn from(_: mpsc::SendError<Message>) -> Error {
+        Error::SendError
     }
 }
 

@@ -34,8 +34,16 @@ pub struct Cli {
 }
 
 impl Config {
-    pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Config, String> {
-        let content = fs::read_to_string(path).map_err(|e| format!("Invalid path: {}", &e))?;
-        toml::from_str(&content).map_err(|e| format!("Invalid toml: {e}"))
+    pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Config, Error> {
+        let content = fs::read_to_string(path)?;
+        Ok(toml::from_str(&content)?)
     }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("IO Error: {0}")]
+    IO(#[from] std::io::Error),
+    #[error("Toml Deserializer Error: {0}")]
+    Toml(#[from] toml::de::Error),
 }

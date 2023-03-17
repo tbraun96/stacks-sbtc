@@ -1,6 +1,6 @@
 pub mod coordinator;
 
-use coordinator::Coordinator;
+use coordinator::{Coordinator, Error};
 use frost_signer::{
     config::Config,
     net::{HttpNet, HttpNetListen},
@@ -11,7 +11,7 @@ pub const DEVNET_COORDINATOR_DKG_ID: u64 = 0; //TODO: Remove, this is a correlat
 
 pub fn create_coordinator(
     path: impl AsRef<std::path::Path>,
-) -> Result<Coordinator<HttpNetListen>, String> {
+) -> Result<Coordinator<HttpNetListen>, Error> {
     let config = Config::from_path(path)?;
 
     let net: HttpNet = HttpNet::new(config.http_relay_url.clone());

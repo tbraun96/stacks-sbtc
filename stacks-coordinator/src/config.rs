@@ -1,9 +1,17 @@
-use crate::error::Result;
 // TODO: Set appropriate types
 type ContractIdentifier = String;
 type StacksPrivateKey = String;
 type BitcoinPrivateKey = String;
 type Url = String;
+
+/// Errors associated with reading the Config file
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("IO Error: {0}")]
+    IOError(#[from] std::io::Error),
+    #[error("Toml Error: {0}")]
+    TomlError(#[from] toml::de::Error),
+}
 
 #[derive(serde::Deserialize)]
 pub struct Config {
@@ -17,7 +25,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Self> {
+    pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Self, Error> {
         Ok(toml::from_str(&std::fs::read_to_string(path)?)?)
     }
 }

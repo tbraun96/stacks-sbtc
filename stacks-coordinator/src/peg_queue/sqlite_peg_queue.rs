@@ -1,17 +1,36 @@
 use std::path::Path;
 use std::str::FromStr;
 
-use rusqlite::Connection as RusqliteConnection;
-use rusqlite::Error as SqliteError;
-use rusqlite::Row as SqliteRow;
+use rusqlite::{Connection as RusqliteConnection, Error as RusqliteError, Row as SqliteRow};
 
 use blockstack_lib::burnchains::Txid;
 use blockstack_lib::types::chainstate::BurnchainHeaderHash;
 use blockstack_lib::util::HexError;
 
-use crate::peg_queue::PegQueue;
-use crate::peg_queue::SbtcOp;
+use crate::peg_queue::{Error as PegQueueError, PegQueue, SbtcOp};
 use crate::stacks_node;
+
+#[allow(clippy::enum_variant_names)]
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("Rusqlite Error: {0}")]
+    RusqliteError(#[from] RusqliteError),
+    #[error("JSON serialization failure: {0}")]
+    JsonError(#[from] serde_json::Error),
+    #[error("Hex codec error: {0}")]
+    HexError(#[from] HexError),
+    #[error("Did not recognize status: {0}")]
+    InvalidStatusError(String),
+    #[error("Entry does not exist")]
+    EntryDoesNotExist,
+}
+
+// Workaround to allow non-perfect conversions in `Entry::from_row`
+impl From<Error> for rusqlite::Error {
+    fn from(err: Error) -> Self {
+        Self::InvalidColumnType(0, err.to_string(), rusqlite::types::Type::Text)
+    }
+}
 
 pub struct SqlitePegQueue {
     conn: rusqlite::Connection,
@@ -126,7 +145,7 @@ impl SqlitePegQueue {
 }
 
 impl PegQueue for SqlitePegQueue {
-    fn sbtc_op(&self) -> crate::error::Result<Option<SbtcOp>> {
+    fn sbtc_op(&self) -> Result<Option<SbtcOp>, PegQueueError> {
         let maybe_entry = self.get_single_entry_with_status(&Status::New)?;
 
         let Some(mut entry) = maybe_entry else {
@@ -139,11 +158,11 @@ impl PegQueue for SqlitePegQueue {
         Ok(Some(entry.op))
     }
 
-    fn poll<N: stacks_node::StacksNode>(&self, stacks_node: &N) -> crate::error::Result<()> {
-        let target_block_height = stacks_node.burn_block_height();
+    fn poll<N: stacks_node::StacksNode>(&self, stacks_node: &N) -> Result<(), PegQueueError> {
+        let target_block_height = stacks_node.burn_block_height()?;
 
         for block_height in (self.max_observed_block_height()? + 1)..=target_block_height {
-            for peg_in_op in stacks_node.get_peg_in_ops(block_height) {
+            for peg_in_op in stacks_node.get_peg_in_ops(block_height)? {
                 let entry = Entry {
                     block_height,
                     status: Status::New,
@@ -155,7 +174,7 @@ impl PegQueue for SqlitePegQueue {
                 self.insert(&entry)?;
             }
 
-            for peg_out_request_op in stacks_node.get_peg_out_request_ops(block_height) {
+            for peg_out_request_op in stacks_node.get_peg_out_request_ops(block_height)? {
                 let entry = Entry {
                     block_height,
                     status: Status::New,
@@ -167,7 +186,6 @@ impl PegQueue for SqlitePegQueue {
                 self.insert(&entry)?;
             }
         }
-
         Ok(())
     }
 
@@ -175,7 +193,7 @@ impl PegQueue for SqlitePegQueue {
         &self,
         txid: &Txid,
         burn_header_hash: &BurnchainHeaderHash,
-    ) -> crate::error::Result<()> {
+    ) -> Result<(), PegQueueError> {
         let mut entry = self.get_entry(txid, burn_header_hash)?;
 
         entry.status = Status::Acknowledged;
@@ -195,7 +213,7 @@ struct Entry {
 }
 
 impl Entry {
-    fn from_row(row: &SqliteRow) -> Result<Self, SqliteError> {
+    fn from_row(row: &SqliteRow) -> Result<Self, RusqliteError> {
         let txid = Txid::from_hex(&row.get::<_, String>(0)?).map_err(Error::from)?;
 
         let burn_header_hash =
@@ -236,42 +254,16 @@ impl Status {
 
 impl FromStr for Status {
     type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self, Error> {
         Ok(match s {
             "new" => Self::New,
             "pending" => Self::Pending,
             "acknowledged" => Self::Acknowledged,
-            other => return Err(Error::UnrecognizedStatusString(other.to_owned())),
+            other => return Err(Error::InvalidStatusError(other.to_owned())),
         })
     }
 }
 
-#[allow(clippy::enum_variant_names)]
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("Http network error: {0}")]
-    SqliteError(#[from] rusqlite::Error),
-
-    #[error("JSON serialization failure: {0}")]
-    JsonError(#[from] serde_json::Error),
-
-    #[error("Did not recognize status string: {0}")]
-    UnrecognizedStatusString(String),
-
-    #[error("Hex codec error: {0}")]
-    HexError(#[from] HexError),
-
-    #[error("Entry does not exist")]
-    EntryDoesNotExist,
-}
-
-// Workaround to allow non-perfect conversions in `Entry::from_row`
-impl From<Error> for rusqlite::Error {
-    fn from(err: Error) -> Self {
-        Self::InvalidColumnType(0, err.to_string(), rusqlite::types::Type::Text)
-    }
-}
 #[cfg(test)]
 mod tests {
     use std::{collections::hash_map::DefaultHasher, hash::Hasher};
@@ -328,7 +320,7 @@ mod tests {
 
         stacks_node_mock
             .expect_burn_block_height()
-            .return_const(number_of_simulated_blocks);
+            .returning(move || Ok(number_of_simulated_blocks));
 
         stacks_node_mock.expect_get_peg_in_ops().never();
         stacks_node_mock.expect_get_peg_out_request_ops().never();
@@ -391,15 +383,15 @@ mod tests {
 
         stacks_node_mock
             .expect_burn_block_height()
-            .return_const(block_height);
+            .returning(move || Ok(block_height));
 
         stacks_node_mock
             .expect_get_peg_in_ops()
-            .returning(|height| vec![peg_in_op(height)]);
+            .returning(|height| Ok(vec![peg_in_op(height)]));
 
         stacks_node_mock
             .expect_get_peg_out_request_ops()
-            .returning(|height| vec![peg_out_request_op(height)]);
+            .returning(|height| Ok(vec![peg_out_request_op(height)]));
 
         stacks_node_mock
     }

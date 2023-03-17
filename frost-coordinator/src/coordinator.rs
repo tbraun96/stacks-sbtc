@@ -2,8 +2,8 @@ use std::any::Any;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use frost_signer::config::Config;
-use frost_signer::net::{HttpNetError, Message, NetListen};
+use frost_signer::config::{Config, Error as ConfigError};
+use frost_signer::net::{Error as HttpNetError, Message, NetListen};
 use frost_signer::signing_round::{
     DkgBegin, DkgPublicShare, MessageTypes, NonceRequest, NonceResponse, SignatureShareRequest,
 };
@@ -276,11 +276,7 @@ where
             polys.len()
         );
 
-        let mut aggregator =
-            match v1::SignatureAggregator::new(self.total_keys, self.threshold, polys) {
-                Ok(aggregator) => aggregator,
-                Err(e) => return Err(Error::Aggregator(e)),
-            };
+        let mut aggregator = v1::SignatureAggregator::new(self.total_keys, self.threshold, polys)?;
 
         let id_nonces: Vec<(u32, PublicNonce)> = self
             .public_nonces
@@ -307,19 +303,11 @@ where
             shares.len()
         );
 
-        let sig = match aggregator.sign(msg, &nonces, &shares) {
-            Ok(sig) => sig,
-            Err(e) => return Err(Error::Aggregator(e)),
-        };
+        let sig = aggregator.sign(msg, &nonces, &shares)?;
 
         info!("Signature ({}, {})", sig.R, sig.z);
 
-        let proof = match SchnorrProof::new(&sig) {
-            Ok(proof) => proof,
-            Err(e) => {
-                return Err(Error::Bip340(e));
-            }
-        };
+        let proof = SchnorrProof::new(&sig).map_err(Error::Bip340)?;
 
         info!("SchnorrProof ({}, {})", proof.r, proof.s);
 
@@ -438,11 +426,13 @@ pub enum Error {
     #[error("No aggregate public key")]
     NoAggregatePublicKey,
     #[error("Aggregator failed to sign: {0}")]
-    Aggregator(AggregatorError),
+    Aggregator(#[from] AggregatorError),
     #[error("BIP-340 error")]
     Bip340(Bip340Error),
     #[error("SchnorrProof failed to verify")]
     SchnorrProofFailed,
     #[error("Operation timed out")]
     Timeout,
+    #[error("Config Error: {0}")]
+    ConfigError(#[from] ConfigError),
 }

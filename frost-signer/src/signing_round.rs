@@ -10,9 +10,17 @@ use wtfrost::{
     v1, Scalar,
 };
 
-use crate::state_machine::{StateMachine, States};
+use crate::state_machine::{Error as StateMachineError, StateMachine, States};
 
 type KeyShares = HashMap<usize, Scalar>;
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("InvalidPartyID")]
+    InvalidPartyID,
+    #[error("State Machine Error: {0}")]
+    StateMachineError(#[from] StateMachineError),
+}
 
 pub struct SigningRound {
     pub dkg_id: u64,
@@ -34,13 +42,13 @@ pub struct Signer {
 }
 
 impl StateMachine for SigningRound {
-    fn move_to(&mut self, state: States) -> Result<(), String> {
+    fn move_to(&mut self, state: States) -> Result<(), StateMachineError> {
         self.can_move_to(&state)?;
         self.state = state;
         Ok(())
     }
 
-    fn can_move_to(&self, state: &States) -> Result<(), String> {
+    fn can_move_to(&self, state: &States) -> Result<(), StateMachineError> {
         let prev_state = &self.state;
         let accepted = match state {
             States::Idle => true,
@@ -59,7 +67,10 @@ impl StateMachine for SigningRound {
             info!("state change from {:?} to {:?}", prev_state, state);
             Ok(())
         } else {
-            Err(format!("bad state change: {:?} to {:?}", prev_state, state))
+            Err(StateMachineError::BadStateChange(format!(
+                "{:?} to {:?}",
+                prev_state, state
+            )))
         }
     }
 }
@@ -193,7 +204,7 @@ impl SigningRound {
         self.signer.frost_signer.reset_polys(rng);
     }
 
-    pub fn process(&mut self, message: MessageTypes) -> Result<Vec<MessageTypes>, String> {
+    pub fn process(&mut self, message: MessageTypes) -> Result<Vec<MessageTypes>, Error> {
         let out_msgs = match message {
             MessageTypes::DkgBegin(dkg_begin) => self.dkg_begin(dkg_begin),
             MessageTypes::DkgPrivateBegin => self.dkg_private_begin(),
@@ -236,7 +247,7 @@ impl SigningRound {
         }
     }
 
-    fn dkg_public_ended(&mut self) -> Result<MessageTypes, String> {
+    fn dkg_public_ended(&mut self) -> Result<MessageTypes, Error> {
         let dkg_end = MessageTypes::DkgPublicEnd(DkgEnd {
             dkg_id: self.dkg_id,
             signer_id: self.signer.signer_id as usize,
@@ -249,7 +260,7 @@ impl SigningRound {
         Ok(dkg_end)
     }
 
-    fn dkg_ended(&mut self) -> Result<MessageTypes, String> {
+    fn dkg_ended(&mut self) -> Result<MessageTypes, Error> {
         for party in &mut self.signer.frost_signer.parties {
             let commitments: Vec<PolyCommitment> = self.commitments.clone().into_values().collect();
             let mut shares: HashMap<usize, Scalar> = HashMap::new();
@@ -310,7 +321,7 @@ impl SigningRound {
             && self.shares.len() == self.total
     }
 
-    fn nonce_request(&mut self, nonce_request: NonceRequest) -> Result<Vec<MessageTypes>, String> {
+    fn nonce_request(&mut self, nonce_request: NonceRequest) -> Result<Vec<MessageTypes>, Error> {
         let mut rng = OsRng::default();
         let mut msgs = vec![];
         for party in &mut self.signer.frost_signer.parties {
@@ -333,12 +344,12 @@ impl SigningRound {
     fn sign_share_request(
         &mut self,
         sign_request: SignatureShareRequest,
-    ) -> Result<Vec<MessageTypes>, String> {
+    ) -> Result<Vec<MessageTypes>, Error> {
         let mut msgs = vec![];
         let party_id: usize = sign_request
             .party_id
             .try_into()
-            .map_err(|_| "Invalid party id")?;
+            .map_err(|_| Error::InvalidPartyID)?;
         if let Some(party) = self
             .signer
             .frost_signer
@@ -370,7 +381,7 @@ impl SigningRound {
         Ok(msgs)
     }
 
-    fn dkg_begin(&mut self, dkg_begin: DkgBegin) -> Result<Vec<MessageTypes>, String> {
+    fn dkg_begin(&mut self, dkg_begin: DkgBegin) -> Result<Vec<MessageTypes>, Error> {
         let mut rng = OsRng::default();
 
         self.reset(dkg_begin.dkg_id, &mut rng);
@@ -381,7 +392,7 @@ impl SigningRound {
         self.dkg_public_begin()
     }
 
-    fn dkg_public_begin(&mut self) -> Result<Vec<MessageTypes>, String> {
+    fn dkg_public_begin(&mut self) -> Result<Vec<MessageTypes>, Error> {
         let mut rng = OsRng::default();
         let mut msgs = vec![];
         for (_idx, party) in self.signer.frost_signer.parties.iter().enumerate() {
@@ -402,7 +413,7 @@ impl SigningRound {
         Ok(msgs)
     }
 
-    fn dkg_private_begin(&mut self) -> Result<Vec<MessageTypes>, String> {
+    fn dkg_private_begin(&mut self) -> Result<Vec<MessageTypes>, Error> {
         let mut msgs = vec![];
         for (_idx, party) in self.signer.frost_signer.parties.iter().enumerate() {
             info!("sending dkg private share for party #{}", party.id);
@@ -421,7 +432,7 @@ impl SigningRound {
     fn dkg_public_share(
         &mut self,
         dkg_public_share: DkgPublicShare,
-    ) -> Result<Vec<MessageTypes>, String> {
+    ) -> Result<Vec<MessageTypes>, Error> {
         self.commitments
             .insert(dkg_public_share.party_id, dkg_public_share.public_share);
         info!(
@@ -436,7 +447,7 @@ impl SigningRound {
     fn dkg_private_shares(
         &mut self,
         dkg_private_shares: DkgPrivateShares,
-    ) -> Result<Vec<MessageTypes>, String> {
+    ) -> Result<Vec<MessageTypes>, Error> {
         let shares_clone = dkg_private_shares.private_shares.clone();
         self.shares.insert(
             dkg_private_shares.party_id,

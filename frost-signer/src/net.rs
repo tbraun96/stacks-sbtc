@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
-use std::sync::mpsc;
 use tracing::{debug, info, warn};
 
 use crate::signing_round;
@@ -46,7 +45,7 @@ pub trait NetListen {
 }
 
 impl NetListen for HttpNetListen {
-    type Error = HttpNetError;
+    type Error = Error;
 
     fn listen(&self) {}
 
@@ -88,7 +87,7 @@ pub trait Net {
 }
 
 impl Net for HttpNet {
-    type Error = HttpNetError;
+    type Error = Error;
 
     fn send_message(&self, msg: Message) -> Result<(), Self::Error> {
         let req = ureq::post(&self.http_relay_url);
@@ -116,27 +115,12 @@ impl Net for HttpNet {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum HttpNetError {
+pub enum Error {
     #[error("Serialization failed: {0}")]
     SerializationError(#[from] bincode::Error),
 
     #[error("Network error: {0}")]
     NetworkError(#[from] Box<ureq::Error>),
-
-    #[error("Recv Error: {0}")]
-    RecvError(#[from] mpsc::RecvError),
-
-    #[error("Send Error")]
-    SendError,
-
-    #[error("DKG Error: {0}")]
-    DKGError(String),
-}
-
-impl From<mpsc::SendError<Message>> for HttpNetError {
-    fn from(_: mpsc::SendError<Message>) -> HttpNetError {
-        HttpNetError::SendError
-    }
 }
 
 fn url_with_id(base: &str, id: u32) -> String {

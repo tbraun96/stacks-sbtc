@@ -35,7 +35,9 @@ fn main() {
             }
         }
         Command::Secp256k1(secp256k1) => {
-            secp256k1.generate_private_key().unwrap();
+            if let Err(e) = secp256k1.generate_private_key() {
+                warn!("An error occurred generating private key: {}", e);
+            }
         }
     };
 }
