@@ -18,5 +18,5 @@ wtfrost = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = "2.0.8"
-predicates = "2.1.5"
+predicates = "3.0.1"
 testdir = "0.7.2"
