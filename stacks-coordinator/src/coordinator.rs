@@ -57,6 +57,8 @@ pub enum Error {
     /// "Bitcoin Sighash Error"
     #[error("Bitcoin Sighash Error")]
     BitcoinSighash(#[from] SighashError),
+    #[error("Command sender disconnected unexpectedly: {0}")]
+    UnexpectedSenderDisconnect(#[from] std::sync::mpsc::RecvError),
 }
 
 pub trait Coordinator: Sized {
@@ -79,13 +81,11 @@ pub trait Coordinator: Sized {
         Self::poll_ping_thread(sender);
 
         loop {
-            match receiver.recv().expect("thread receive err {0}") {
+            match receiver.recv()? {
                 Command::Stop => break,
                 Command::Timeout => {
-                    self.peg_queue()
-                        .poll(self.stacks_node())
-                        .expect("peg_queue poll error {0}");
-                    self.process_queue().expect("peg queue error {0}");
+                    self.peg_queue().poll(self.stacks_node())?;
+                    self.process_queue()?;
                 }
             }
         }
@@ -174,7 +174,6 @@ pub enum Command {
 }
 
 pub struct StacksCoordinator {
-    _config: Config,
     frost_coordinator: FrostCoordinator,
     local_peg_queue: SqlitePegQueue,
     local_stacks_node: NodeClient,
@@ -195,12 +194,10 @@ impl StacksCoordinator {
 impl TryFrom<Config> for StacksCoordinator {
     type Error = Error;
     fn try_from(config: Config) -> Result<Self> {
-        let stacks_rpc_url = config.stacks_node_rpc_url.clone();
         Ok(Self {
-            frost_coordinator: create_coordinator(config.signer_config_path.clone())?,
-            _config: config,
-            local_peg_queue: SqlitePegQueue::in_memory(0)?,
-            local_stacks_node: NodeClient::new(&stacks_rpc_url),
+            local_peg_queue: SqlitePegQueue::try_from(&config)?,
+            local_stacks_node: NodeClient::new(&config.stacks_node_rpc_url),
+            frost_coordinator: create_coordinator(config.signer_config_path)?,
             local_fee_wallet: WrapPegWallet {
                 bitcoin_wallet: FileBitcoinWallet {},
             },
@@ -260,6 +257,8 @@ mod tests {
             bitcoin_node_rpc_url: "".to_string(),
             frost_dkg_round_id: 0,
             signer_config_path: "conf/signer.toml".to_string(),
+            start_block_height: None,
+            rusqlite_path: None,
         };
         // todo: make StacksCoordinator with mock FrostCoordinator to locally generate PublicKey and Signature for unit test
         let mut sc = StacksCoordinator::try_from(config).unwrap();

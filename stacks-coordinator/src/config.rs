@@ -22,6 +22,8 @@ pub struct Config {
     pub bitcoin_node_rpc_url: Url,
     pub frost_dkg_round_id: u64,
     pub signer_config_path: String,
+    pub start_block_height: Option<u64>,
+    pub rusqlite_path: Option<String>,
 }
 
 impl Config {

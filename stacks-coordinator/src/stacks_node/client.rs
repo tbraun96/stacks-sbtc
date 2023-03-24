@@ -4,11 +4,11 @@ use blockstack_lib::{
     codec::StacksMessageCodec, types::chainstate::StacksAddress,
 };
 use reqwest::blocking::Client;
-use serde_json::{from_value, Value};
+use serde_json::Value;
+use tracing::debug;
 
 /// Kinds of common errors used by stacks coordinator
 #[derive(thiserror::Error, Debug)]
-#[non_exhaustive]
 pub enum Error {
     #[error("Stacks Node Error: {0}")]
     StacksNodeError(#[from] StacksNodeError),
@@ -30,65 +30,65 @@ impl NodeClient {
     fn build_url(&self, route: &str) -> String {
         format!("{}{}", self.node_url, route)
     }
+
+    fn get_response(&self, route: &str) -> Result<String, StacksNodeError> {
+        let url = self.build_url(route);
+        debug!("Sending Request to Stacks Node: {}", &url);
+        Ok(self.client.get(&url).send()?.text()?)
+    }
+
+    fn get_burn_ops<T>(&self, block_height: u64, op: &str) -> Result<Vec<T>, StacksNodeError>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let response = self.get_response(&format!("/v2/burn_ops/{block_height}/{op}"))?;
+        let failure_msg = format!("Could not find burn block at height {block_height}");
+        if failure_msg == response {
+            Err(StacksNodeError::UnknownBlockHeight(block_height))
+        } else {
+            let json = serde_json::from_str::<Value>(&response)?;
+            Ok(serde_json::from_value(json[op].clone())?)
+        }
+    }
 }
 
 impl StacksNode for NodeClient {
     fn get_peg_in_ops(&self, block_height: u64) -> Result<Vec<PegInOp>, StacksNodeError> {
-        let url = self.build_url(&format!("/v2/burn_ops/peg_in/{block_height}"));
-        Ok(self
-            .client
-            .get(url)
-            .send()
-            .and_then(|res| res.json::<Value>())
-            .map(|json| from_value(json["peg_in"].clone()))??)
+        self.get_burn_ops::<PegInOp>(block_height, "peg_in")
     }
 
     fn get_peg_out_request_ops(
         &self,
         block_height: u64,
     ) -> Result<Vec<PegOutRequestOp>, StacksNodeError> {
-        let url = self.build_url(&format!("/v2/burn_ops/peg_out_request/{block_height}"));
-        Ok(self
-            .client
-            .get(url)
-            .send()
-            .and_then(|res| res.json::<Value>())
-            .map(|json| from_value(json["peg_in"].clone()))??)
+        self.get_burn_ops::<PegOutRequestOp>(block_height, "peg_out_request")
     }
 
     fn burn_block_height(&self) -> Result<u64, StacksNodeError> {
-        let url = self.build_url("/v2/info");
-
-        self.client
-            .get(url)
-            .send()
-            .and_then(|res| res.json::<Value>())
-            .map(|json| {
-                json["burn_block_height"]
-                    .as_u64()
-                    .ok_or_else(|| StacksNodeError::InvalidJsonEntry)
-            })?
+        let response = self.get_response("/v2/info")?;
+        let entry = "burn_block_height";
+        let json: Value = serde_json::from_str(&response)?;
+        json[entry]
+            .as_u64()
+            .ok_or_else(|| StacksNodeError::InvalidJsonEntry(entry.to_string()))
     }
 
     fn next_nonce(&self, addr: StacksAddress) -> Result<u64, StacksNodeError> {
         let url = self.build_url(&format!("/v2/accounts/{}", addr.to_b58()));
-
-        self.client
-            .get(url)
-            .send()
-            .and_then(|res| res.json::<Value>())
-            .map(|json| {
-                json["nonce"]
-                    .as_u64()
-                    .map(|val| val + 1)
-                    .ok_or_else(|| StacksNodeError::InvalidJsonEntry)
-            })?
+        let entry = "nonce";
+        self.client.get(url).send()?.json::<Value>().map(|json| {
+            json[entry]
+                .as_u64()
+                .map(|val| val + 1)
+                .ok_or_else(|| StacksNodeError::InvalidJsonEntry(entry.to_string()))
+        })?
     }
 
     fn broadcast_transaction(&self, tx: &StacksTransaction) -> Result<(), StacksNodeError> {
         let url = self.build_url("/v2/transactions");
 
         let mut buffer = vec![];
+
         tx.consensus_serialize(&mut buffer)?;
 
         let _return = self

@@ -7,10 +7,11 @@ pub use blockstack_lib::chainstate::stacks::StacksTransaction;
 
 /// Kinds of common errors used by stacks coordinator
 #[derive(thiserror::Error, Debug)]
-#[non_exhaustive]
 pub enum Error {
-    #[error("Invalid JSON entry")]
-    InvalidJsonEntry,
+    #[error("Invalid JSON entry: {0}")]
+    InvalidJsonEntry(String),
+    #[error("Failed to find burn block height: {0}")]
+    UnknownBlockHeight(u64),
     #[error("JSON serialization Error: {0}")]
     JsonError(#[from] serde_json::Error),
     #[error("Reqwest Error: {0}")]

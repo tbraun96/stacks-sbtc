@@ -8,7 +8,6 @@ use crate::{
 };
 
 #[derive(thiserror::Error, Debug)]
-#[non_exhaustive]
 pub enum Error {
     #[error("type conversion error from blockstack::bitcoin to bitcoin:: {0}")]
     ConversionError(#[from] bitcoin::hashes::Error),
