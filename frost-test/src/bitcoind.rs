@@ -8,8 +8,8 @@ use ctrlc::Signal;
 use nix::sys::signal;
 use nix::unistd::Pid;
 use ureq;
-use ureq::serde_json;
 use ureq::serde_json::Value;
+use ureq::{json, serde_json};
 
 const BITCOIND_URL: &str = "http://abcd:abcd@localhost:18443";
 
@@ -22,14 +22,13 @@ pub fn bitcoind_rpc(method: &str, params: impl ureq::serde::Serialize) -> serde_
             result
         }
         Err(err) => {
-            let json = err
-                .into_response()
-                .unwrap()
-                .into_json::<serde_json::Value>()
-                .unwrap();
-            let err = json.as_object().unwrap().get("error").unwrap();
-            println!("{} -> {}", rpc, err);
-            json
+            let err_str = err.to_string();
+            let err_obj_opt = match err.into_response() {
+                Some(r) => r.into_json::<serde_json::Value>().unwrap(),
+                None => json!({ "error": &err_str }),
+            };
+            println!("{} -> {}", rpc, err_obj_opt);
+            err_obj_opt
         }
     }
 }
@@ -48,12 +47,31 @@ pub fn bitcoind_setup() -> BitcoinPid {
         stop_pid(bitcoind_pid)
     })
     .expect("Error setting Ctrl-C handler");
-    println!(
-        "bitconind {} started. waiting 1 second to warm up. {}",
-        bitcoind_pid, BITCOIND_URL
-    );
-    thread::sleep(Duration::from_millis(500));
-    BitcoinPid::new(bitcoind_pid)
+    match connectivity_check() {
+        Err(e) => {
+            panic!("no bitcoind available! {e}");
+        }
+        Ok(elapsed) => {
+            println!(
+                "bitconind pid {} started. warmed up in {} seconds",
+                bitcoind_pid, elapsed
+            );
+            BitcoinPid::new(bitcoind_pid)
+        }
+    }
+}
+
+pub fn connectivity_check() -> Result<f32, String> {
+    let now = std::time::SystemTime::now();
+    for _tries in 1..120 {
+        let uptime = bitcoind_rpc("uptime", ());
+        if uptime.is_number() {
+            return Ok(now.elapsed().unwrap().as_secs_f32());
+        } else {
+            thread::sleep(Duration::from_millis(500));
+        }
+    }
+    Err("connection timeout".to_string())
 }
 
 pub fn bitcoind_mine(public_key_bytes: &[u8; 33]) -> Value {
