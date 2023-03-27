@@ -1,16 +1,14 @@
 use bitcoin::consensus::{Decodable, Encodable};
 use bitcoin::psbt::serialize::Serialize;
-use bitcoin::schnorr::{TapTweak, TweakedPublicKey, UntweakedKeyPair};
+use bitcoin::schnorr::TweakedPublicKey;
 use bitcoin::secp256k1::{rand, Message};
 use bitcoin::{
-    EcdsaSighashType, OutPoint, PackedLockTime, PublicKey, SchnorrSighashType, Script, Transaction,
+    EcdsaSighashType, OutPoint, PackedLockTime, SchnorrSighashType, Script, Transaction,
     XOnlyPublicKey,
 };
 use frost_test::bitcoind;
 use frost_test::bitcoind::{bitcoind_mine, bitcoind_rpc};
 use rand_core::OsRng;
-use ureq::serde_json;
-use ureq::serde_json::Value;
 use wtfrost::common::PolyCommitment;
 use wtfrost::{
     bip340::{
@@ -20,8 +18,6 @@ use wtfrost::{
     v1::{self, SignatureAggregator},
     Point,
 };
-
-const BITCOIND_URL: &str = "http://abcd:abcd@localhost:18443";
 
 #[test]
 fn blog_post() {
@@ -136,7 +132,7 @@ fn frost_btc() {
         bitcoin::PublicKey::from_slice(&group_public_key.compress().as_bytes()).unwrap();
 
     // bitcoind regtest
-    let bitcoind_pid = bitcoind::bitcoind_setup();
+    let _bitcoind_pid = bitcoind::bitcoind_setup();
 
     // create user keys
     let user_secret_key = bitcoin::secp256k1::SecretKey::new(&mut rand::thread_rng());
@@ -277,7 +273,7 @@ fn frost_btc() {
     .unwrap();
     assert!(schnorr_proof.verify(&group_public_key.x(), &signing_payload));
 
-    let taproot_sighash_msg = Message::from_slice(&taproot_sighash).unwrap();
+    let _taproot_sighash_msg = Message::from_slice(&taproot_sighash).unwrap();
     let mut frost_sig_bytes = vec![];
     frost_sig_bytes.extend(schnorr_proof.r.to_bytes());
     frost_sig_bytes.extend(schnorr_proof.s.to_bytes());
@@ -334,7 +330,7 @@ fn build_peg_in_op_return(
         value: 0,
         script_pubkey: op_return,
     };
-    let secp = bitcoin::util::key::Secp256k1::new();
+    let _secp = bitcoin::util::key::Secp256k1::new();
     // crate type weirdness
     let peg_wallet_address_secp =
         bitcoin::secp256k1::PublicKey::from_slice(&peg_wallet_address.to_bytes()).unwrap();

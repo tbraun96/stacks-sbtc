@@ -24,6 +24,8 @@ pub enum Error {
     InvalidStatusError(String),
     #[error("Entry does not exist")]
     EntryDoesNotExist,
+    #[error("Missing Start Block Height")]
+    MissingStartBlockHeight,
 }
 
 // Workaround to allow non-perfect conversions in `Entry::from_row`
@@ -41,7 +43,9 @@ pub struct SqlitePegQueue {
 impl TryFrom<&Config> for SqlitePegQueue {
     type Error = Error;
     fn try_from(cfg: &Config) -> Result<Self, Error> {
-        let start_block_height = cfg.start_block_height.unwrap_or(0);
+        let start_block_height = cfg
+            .start_block_height
+            .ok_or_else(|| Error::MissingStartBlockHeight)?;
         if let Some(path) = &cfg.rusqlite_path {
             Self::new(path, start_block_height)
         } else {
@@ -147,11 +151,7 @@ impl SqlitePegQueue {
             .query_row(
                 Self::sql_select_max_burn_height(),
                 rusqlite::params![],
-                |row| {
-                    Ok(row
-                        .get::<_, i64>(0)
-                        .unwrap_or(self.start_block_height as i64))
-                },
+                |row| row.get::<_, i64>(0),
             )
             .map(|count| count as u64)?)
     }
@@ -211,7 +211,10 @@ impl PegQueue for SqlitePegQueue {
 
     fn poll<N: StacksNode>(&self, stacks_node: &N) -> Result<(), PegQueueError> {
         let target_block_height = stacks_node.burn_block_height()?;
-        let start_block_height = self.max_observed_block_height()? + 1;
+        let start_block_height = self
+            .max_observed_block_height()
+            .map(|count| count + 1)
+            .unwrap_or(self.start_block_height);
         info!(
             "Checking for peg-in and peg-out requests for block heights {} to {}",
             start_block_height, target_block_height
@@ -339,7 +342,7 @@ mod tests {
 
     #[test]
     fn calling_sbtc_op_should_return_new_peg_ops() {
-        let peg_queue = SqlitePegQueue::in_memory(0).unwrap();
+        let peg_queue = SqlitePegQueue::in_memory(1).unwrap();
         let number_of_simulated_blocks: u64 = 3;
 
         let stacks_node_mock = default_stacks_node_mock(number_of_simulated_blocks);
@@ -363,7 +366,7 @@ mod tests {
 
     #[test]
     fn calling_poll_should_not_query_new_ops_if_at_block_height() {
-        let peg_queue = SqlitePegQueue::in_memory(0).unwrap();
+        let peg_queue = SqlitePegQueue::in_memory(1).unwrap();
         let number_of_simulated_blocks: u64 = 3;
 
         let stacks_node_mock = default_stacks_node_mock(number_of_simulated_blocks);
@@ -389,7 +392,7 @@ mod tests {
 
     #[test]
     fn calling_poll_should_find_new_ops_if_at_new_block_height() {
-        let peg_queue = SqlitePegQueue::in_memory(0).unwrap();
+        let peg_queue = SqlitePegQueue::in_memory(1).unwrap();
         let number_of_simulated_blocks: u64 = 3;
         let number_of_simulated_blocks_second_poll: u64 = 5;
 
@@ -418,7 +421,7 @@ mod tests {
 
     #[test]
     fn acknowledged_entries_should_have_acknowledge_status() {
-        let peg_queue = SqlitePegQueue::in_memory(0).unwrap();
+        let peg_queue = SqlitePegQueue::in_memory(1).unwrap();
         let number_of_simulated_blocks: u64 = 1;
 
         let stacks_node_mock = default_stacks_node_mock(number_of_simulated_blocks);

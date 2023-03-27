@@ -1,14 +1,10 @@
-use hashbrown::HashMap;
 use rand_core::OsRng;
 use wtfrost::bip340::test_helpers::{dkg, sign};
 use wtfrost::bip340::SchnorrProof;
-use wtfrost::{
-    common::PublicNonce,
-    traits::Signer,
-    v1::{self, SignatureAggregator},
-};
+use wtfrost::v1::{self, SignatureAggregator};
 
 #[test]
+#[allow(non_snake_case)]
 fn pure_frost_test() {
     let T = 3;
     let N = 4;

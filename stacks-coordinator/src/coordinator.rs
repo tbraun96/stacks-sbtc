@@ -14,7 +14,7 @@ use wtfrost::{bip340::SchnorrProof, common::Signature};
 use crate::config::{Config, Error as ConfigError};
 use crate::peg_wallet::{BitcoinWallet, Error as PegWalletError, FileBitcoinWallet, PegWallet};
 use crate::peg_wallet::{StacksWallet, WrapPegWallet};
-use crate::stacks_node;
+use crate::stacks_node::{self, Error as StacksNodeError};
 // Traits in scope
 use crate::bitcoin_node::{BitcoinNode, BitcoinTransaction, LocalhostBitcoinNode};
 use crate::peg_queue::{
@@ -59,6 +59,8 @@ pub enum Error {
     BitcoinSighash(#[from] SighashError),
     #[error("Command sender disconnected unexpectedly: {0}")]
     UnexpectedSenderDisconnect(#[from] std::sync::mpsc::RecvError),
+    #[error("Stacks Node Error: {0}")]
+    StacksNodeError(#[from] StacksNodeError),
 }
 
 pub trait Coordinator: Sized {
@@ -193,10 +195,15 @@ impl StacksCoordinator {
 
 impl TryFrom<Config> for StacksCoordinator {
     type Error = Error;
-    fn try_from(config: Config) -> Result<Self> {
+    fn try_from(mut config: Config) -> Result<Self> {
+        let local_stacks_node = NodeClient::new(&config.stacks_node_rpc_url);
+        // If a user has not specified a start block height, begin from the current burn block height by default
+        config.start_block_height = config
+            .start_block_height
+            .or_else(|| local_stacks_node.burn_block_height().ok());
         Ok(Self {
             local_peg_queue: SqlitePegQueue::try_from(&config)?,
-            local_stacks_node: NodeClient::new(&config.stacks_node_rpc_url),
+            local_stacks_node,
             frost_coordinator: create_coordinator(config.signer_config_path)?,
             local_fee_wallet: WrapPegWallet {
                 bitcoin_wallet: FileBitcoinWallet {},
