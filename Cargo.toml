@@ -6,12 +6,13 @@ members = [
   "frost-coordinator",
   "stacks-coordinator",
   "stacks-signer",
+  "stacks-doctor",
   "yarpc"]
 
 [workspace.dependencies]
 base58 = "0.2"
 blockstack-core = { git = "https://github.com/stacks-network/stacks-blockchain/", branch = "3493-sbtc-peg-out-wire-format" }
-clap = { version = "4.1.1", features = ["derive"] }
+clap = { version = "4.1.1", features = ["derive", "env"] }
 wtfrost = { git = "https://github.com/Trust-Machines/frost", branch = "main" }
 rusqlite = "0.24.2"
 serde = { version = "1.0", features = ["derive"] }
@@ -30,3 +31,4 @@ rand = "0.8.5"
 backoff = "0.4"
 mockall = "0.11.3"
 markdown-toc = "0.2.0"
+reqwest = "0.11.14"
