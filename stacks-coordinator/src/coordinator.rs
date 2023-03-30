@@ -11,10 +11,14 @@ use std::{thread, time};
 use tracing::info;
 use wtfrost::{bip340::SchnorrProof, common::Signature};
 
+use crate::bitcoin_wallet::BitcoinWallet;
 use crate::config::{Config, Error as ConfigError};
-use crate::peg_wallet::{BitcoinWallet, Error as PegWalletError, FileBitcoinWallet, PegWallet};
-use crate::peg_wallet::{StacksWallet, WrapPegWallet};
+use crate::peg_wallet::{
+    BitcoinWallet as BitcoinWalletTrait, Error as PegWalletError, PegWallet,
+    StacksWallet as StacksWalletTrait, WrapPegWallet,
+};
 use crate::stacks_node::{self, Error as StacksNodeError};
+use crate::stacks_wallet::StacksWallet;
 // Traits in scope
 use crate::bitcoin_node::{BitcoinNode, BitcoinTransaction, LocalhostBitcoinNode};
 use crate::peg_queue::{
@@ -22,6 +26,7 @@ use crate::peg_queue::{
 };
 use crate::stacks_node::client::NodeClient;
 use crate::stacks_node::StacksNode;
+use crate::stacks_wallet::Error as StacksWalletError;
 
 type FrostCoordinator = frost_coordinator::coordinator::Coordinator<HttpNetListen>;
 
@@ -42,9 +47,12 @@ pub enum Error {
     /// Error occurred in the Peg Queue
     #[error("Peg Queue Error: {0}")]
     PegQueueError(#[from] PegQueueError),
-    /// Error occurred in the Peg Wallet
+    // Error occurred in the Peg Wallet
     #[error("Peg Wallet Error: {0}")]
     PegWalletError(#[from] PegWalletError),
+    // Error occurred in the Stacks Wallet
+    #[error("Stacks Wallet Error: {0}")]
+    StacksWalletError(#[from] StacksWalletError),
     /// Error occurred in the Frost Coordinator
     #[error("Frost Coordinator Error: {0}")]
     FrostCoordinatorError(#[from] FrostCoordinatorError),
@@ -115,14 +123,14 @@ pub trait Coordinator: Sized {
 // Private helper functions
 trait CoordinatorHelpers: Coordinator {
     fn peg_in(&mut self, op: stacks_node::PegInOp) -> Result<()> {
-        let _tx = self.fee_wallet().stacks_mut().mint(&op)?;
+        let _tx = self.fee_wallet().stacks_mut().build_mint_transaction(&op)?;
         //self.stacks_node().broadcast_transaction(&tx);
         Ok(())
     }
 
     fn peg_out(&mut self, op: stacks_node::PegOutRequestOp) -> Result<()> {
         let _stacks = self.fee_wallet().stacks_mut();
-        let _burn_tx = self.fee_wallet().stacks_mut().burn(&op)?;
+        let _burn_tx = self.fee_wallet().stacks_mut().build_burn_transaction(&op)?;
         //self.stacks_node().broadcast_transaction(&burn_tx);
 
         let fulfill_tx = self.btc_fulfill_peg_out(&op)?;
@@ -206,7 +214,12 @@ impl TryFrom<Config> for StacksCoordinator {
             local_stacks_node,
             frost_coordinator: create_coordinator(config.signer_config_path)?,
             local_fee_wallet: WrapPegWallet {
-                bitcoin_wallet: FileBitcoinWallet {},
+                bitcoin_wallet: BitcoinWallet {},
+                stacks_wallet: StacksWallet::new(
+                    "..",
+                    config.sbtc_contract,
+                    config.stacks_private_key,
+                )?,
             },
         })
     }
