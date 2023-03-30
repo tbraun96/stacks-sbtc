@@ -1,19 +1,16 @@
-use std::{
-    any,
-    io::{Error, ErrorKind},
-};
+use std::io::{Error, ErrorKind};
 
 pub trait ToIoResult {
     type V;
     fn to_io_result(self) -> Result<Self::V, Error>;
 }
 
-fn error(msg: &str) -> Error {
-    Error::new(ErrorKind::InvalidData, msg)
+fn error<E: Into<Box<dyn std::error::Error + Send + Sync>>>(e: E) -> Error {
+    Error::new(ErrorKind::InvalidData, e)
 }
 
-fn err<T>(msg: &str) -> Result<T, Error> {
-    Err(error(msg))
+fn err<T, E: Into<Box<dyn std::error::Error + Send + Sync>>>(e: E) -> Result<T, Error> {
+    Err(error(e))
 }
 
 impl<T> ToIoResult for Option<T> {
@@ -23,10 +20,10 @@ impl<T> ToIoResult for Option<T> {
     }
 }
 
-impl<T, E> ToIoResult for Result<T, E> {
+impl<T, E: Into<Box<dyn std::error::Error + Send + Sync>>> ToIoResult for Result<T, E> {
     type V = T;
     fn to_io_result(self) -> Result<Self::V, Error> {
-        self.map_or(err(any::type_name::<E>()), Ok)
+        self.or_else(err)
     }
 }
 
@@ -39,5 +36,21 @@ impl<T> TakeToIoResult for Option<T> {
     type V = T;
     fn take_to_io_result(&mut self) -> Result<T, Error> {
         self.take().to_io_result()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ToIoResult;
+
+    #[test]
+    fn option() {
+        let e: Result<u8, String> = Err("hello".to_string());
+        let r = e.to_io_result();
+        let x = format!("{:?}", r);
+        assert_eq!(
+            x,
+            "Err(Custom { kind: InvalidData, error: \"hello\" })".to_string()
+        );
     }
 }
