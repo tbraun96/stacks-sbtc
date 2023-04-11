@@ -147,6 +147,12 @@ trait CoordinatorHelpers: Coordinator {
         op: &stacks_node::PegOutRequestOp,
     ) -> Result<BitcoinTransaction> {
         let mut fulfill_tx = self.fee_wallet().bitcoin_mut().fulfill_peg_out(op)?;
+
+        // Sanity check
+        let pubkey = self.frost_coordinator().get_aggregate_public_key()?;
+        let _xonly_pubkey =
+            PublicKey::from_slice(&pubkey.x().to_bytes()).map_err(Error::BitcoinSecp256k1)?;
+
         let mut comp = bitcoin::util::sighash::SighashCache::new(&fulfill_tx);
         let taproot_sighash = comp.taproot_signature_hash(
             1,
@@ -155,15 +161,10 @@ trait CoordinatorHelpers: Coordinator {
             None,
             SchnorrSighashType::All,
         )?;
-        self.frost_coordinator_mut()
-            .run_distributed_key_generation()?;
         let (_frost_sig, schnorr_proof) = self
             .frost_coordinator_mut()
             .sign_message(&taproot_sighash)?;
 
-        let pubkey = self.frost_coordinator().get_aggregate_public_key()?;
-        let _xonly_pubkey =
-            PublicKey::from_slice(&pubkey.x().to_bytes()).map_err(Error::BitcoinSecp256k1)?;
         debug!(
             "Fulfill Tx {:?} SchnorrProof ({},{})",
             &fulfill_tx, schnorr_proof.r, schnorr_proof.s
