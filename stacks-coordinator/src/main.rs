@@ -28,12 +28,6 @@ fn main() {
                     // Determine what action the caller wishes to perform
                     match cli.command {
                         Command::Run => {
-                            //First run the dkg round to ensure we have an aggregate public key to sign messages with
-                            info!("Running DKG Round");
-                            if let Err(e) = coordinator.run_dkg_round() {
-                                warn!("An error occurred during DKG round: {}", e);
-                            }
-
                             info!("Running Coordinator");
                             //TODO: set up coordination with the stacks node
                             if let Err(e) = coordinator.run() {

@@ -1,9 +1,9 @@
 use crate::bitcoin_node;
 use crate::bitcoin_wallet::{BitcoinWallet as BitcoinWalletStruct, Error as BitcoinWalletError};
 use crate::stacks_node;
-use crate::stacks_transaction::StacksTransaction;
 use crate::stacks_wallet::{Error as StacksWalletError, StacksWallet as StacksWalletStruct};
-use serde::Serialize;
+use bitcoin::Address as BitcoinAddress;
+use blockstack_lib::{chainstate::stacks::StacksTransaction, types::chainstate::StacksAddress};
 use std::fmt::Debug;
 
 #[derive(thiserror::Error, Debug)]
@@ -15,18 +15,26 @@ pub enum Error {
 }
 
 pub trait StacksWallet {
+    /// Builds a verified signed transaction for a given peg-in operation
     fn build_mint_transaction(
         &mut self,
         op: &stacks_node::PegInOp,
+        nonce: u64,
     ) -> Result<StacksTransaction, Error>;
+    /// Builds a verified signed transaction for a given peg-out request operation
     fn build_burn_transaction(
         &mut self,
         op: &stacks_node::PegOutRequestOp,
+        nonce: u64,
     ) -> Result<StacksTransaction, Error>;
-    fn build_set_address_transaction(
+    /// Builds a verified signed transaction for setting the sBTC wallet address
+    fn build_set_btc_address_transaction(
         &mut self,
-        address: PegWalletAddress,
+        address: &BitcoinAddress,
+        nonce: u64,
     ) -> Result<StacksTransaction, Error>;
+    /// Returns the sBTC address for the wallet
+    fn address(&self) -> &StacksAddress;
 }
 
 pub trait BitcoinWallet {
@@ -35,19 +43,20 @@ pub trait BitcoinWallet {
         &self,
         op: &stacks_node::PegOutRequestOp,
     ) -> Result<bitcoin_node::BitcoinTransaction, Error>;
+    /// Returns the BTC address for the wallet
+    fn address(&self) -> &BitcoinAddress;
 }
 
 pub trait PegWallet {
     type StacksWallet: StacksWallet;
     type BitcoinWallet: BitcoinWallet;
     fn stacks_mut(&mut self) -> &mut Self::StacksWallet;
+    fn stacks(&self) -> &Self::StacksWallet;
     fn bitcoin_mut(&mut self) -> &mut Self::BitcoinWallet;
+    fn bitcoin(&self) -> &Self::BitcoinWallet;
 }
 
-// TODO: Representation
-// Should correspond to a [u8; 32] - perhaps reuse a FROST type?
-#[derive(Serialize)]
-pub struct PegWalletAddress(pub [u8; 32]);
+pub type PegWalletAddress = bitcoin::Address;
 
 pub struct WrapPegWallet {
     pub(crate) bitcoin_wallet: BitcoinWalletStruct,
@@ -61,7 +70,15 @@ impl PegWallet for WrapPegWallet {
         &mut self.stacks_wallet
     }
 
+    fn stacks(&self) -> &Self::StacksWallet {
+        &self.stacks_wallet
+    }
+
     fn bitcoin_mut(&mut self) -> &mut Self::BitcoinWallet {
         &mut self.bitcoin_wallet
+    }
+
+    fn bitcoin(&self) -> &Self::BitcoinWallet {
+        &self.bitcoin_wallet
     }
 }

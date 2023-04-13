@@ -1,19 +1,31 @@
 use crate::bitcoin_node::BitcoinTransaction;
 use crate::peg_wallet::{BitcoinWallet as BitcoinWalletTrait, Error as PegWalletError};
 use crate::stacks_node::PegOutRequestOp;
-use bitcoin::hashes::hex::{FromHex, ToHex};
-use bitcoin::hashes::Hash;
-use bitcoin::Script;
+use bitcoin::{
+    hashes::{
+        hex::{Error as HexError, FromHex, ToHex},
+        Error as HashesError, Hash,
+    },
+    Address as BitcoinAddress, Script,
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("type conversion error from blockstack::bitcoin to bitcoin:: {0}")]
-    ConversionError(#[from] bitcoin::hashes::Error),
+    ConversionError(#[from] HashesError),
     #[error("type conversion error blockstack::bitcoin::hashes:hex {0}")]
-    ConversionErrorHex(#[from] bitcoin::hashes::hex::Error),
+    ConversionErrorHex(#[from] HexError),
 }
 
-pub struct BitcoinWallet {}
+pub struct BitcoinWallet {
+    address: BitcoinAddress,
+}
+
+impl BitcoinWallet {
+    pub fn new(address: BitcoinAddress) -> Self {
+        Self { address }
+    }
+}
 
 fn build_transaction(op: &PegOutRequestOp) -> Result<BitcoinTransaction, Error> {
     let bitcoin_txid = bitcoin::Txid::from_slice(op.txid.as_bytes())?;
@@ -48,22 +60,36 @@ impl BitcoinWalletTrait for BitcoinWallet {
         let tx = build_transaction(op)?;
         Ok(tx)
     }
+
+    fn address(&self) -> &BitcoinAddress {
+        &self.address
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::BitcoinWallet;
     use crate::peg_wallet::BitcoinWallet as BitcoinWalletTrait;
-    use blockstack_lib::burnchains::Txid;
-    use blockstack_lib::chainstate::stacks::address::{PoxAddress, PoxAddressType20};
-    use blockstack_lib::types::chainstate::BurnchainHeaderHash;
-    use blockstack_lib::util::secp256k1::MessageSignature;
-
     use crate::stacks_node::PegOutRequestOp;
+    use bitcoin::{secp256k1::Secp256k1, XOnlyPublicKey};
+    use blockstack_lib::{
+        burnchains::Txid,
+        chainstate::stacks::address::{PoxAddress, PoxAddressType20},
+        types::chainstate::BurnchainHeaderHash,
+        util::secp256k1::MessageSignature,
+    };
+    use std::str::FromStr;
 
     #[test]
     fn fulfill_peg_out() {
-        let wallet = BitcoinWallet {};
+        let internal_key = XOnlyPublicKey::from_str(
+            "cc8a4bc64d897bddc5fbc2f670f7a8ba0b386779106cf1223c6fc5d7cd6fc115",
+        )
+        .unwrap();
+        let secp = Secp256k1::verification_only();
+        let address = bitcoin::Address::p2tr(&secp, internal_key, None, bitcoin::Network::Testnet);
+
+        let wallet = BitcoinWallet { address };
         let recipient = PoxAddress::Addr20(true, PoxAddressType20::P2WPKH, [0x01; 20]);
         let peg_wallet_address = PoxAddress::Addr20(true, PoxAddressType20::P2WPKH, [0x01; 20]);
         let req_op = PegOutRequestOp {

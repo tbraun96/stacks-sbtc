@@ -11,7 +11,7 @@ members = [
 
 [workspace.dependencies]
 base58 = "0.2"
-blockstack-core = { git = "https://github.com/stacks-network/stacks-blockchain/", branch = "3493-sbtc-peg-out-wire-format" }
+blockstack-core = { git = "https://github.com/stacks-network/stacks-blockchain/", branch = "next" }
 clap = { version = "4.1.1", features = ["derive", "env"] }
 p256k1 = { git = "https://github.com/Trust-Machines/p256k1", branch = "master" }
 wtfrost = { git = "https://github.com/Trust-Machines/frost", rev = "9d007f6fdb690f0f927f61882a17119b1c1e2d4b" }

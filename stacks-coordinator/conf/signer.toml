@@ -7,3 +7,4 @@ network_private_key = "9aSCCR6eirt1NAHwJtSz4HMwBHTyMo62SyPMvVDt5DQn"
 signer_public_keys = ["22Rm48xUdpuTuva5gz9S7yDaaw9f8sjMcPSTHYVzPLNcj", "22Rm48xUdpuTuva5gz9S7yDaaw9f8sjMcPSTHYVzPLNcj", "22Rm48xUdpuTuva5gz9S7yDaaw9f8sjMcPSTHYVzPLNcj" ]
 key_public_keys = ["22Rm48xUdpuTuva5gz9S7yDaaw9f8sjMcPSTHYVzPLNcj", "22Rm48xUdpuTuva5gz9S7yDaaw9f8sjMcPSTHYVzPLNcj", "22Rm48xUdpuTuva5gz9S7yDaaw9f8sjMcPSTHYVzPLNcj", "22Rm48xUdpuTuva5gz9S7yDaaw9f8sjMcPSTHYVzPLNcj", "22Rm48xUdpuTuva5gz9S7yDaaw9f8sjMcPSTHYVzPLNcj", "22Rm48xUdpuTuva5gz9S7yDaaw9f8sjMcPSTHYVzPLNcj" ]
 coordinator_public_key = "22Rm48xUdpuTuva5gz9S7yDaaw9f8sjMcPSTHYVzPLNcj"
+
