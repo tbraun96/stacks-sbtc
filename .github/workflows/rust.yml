@@ -29,14 +29,26 @@ jobs:
     strategy:
       matrix:
         # can't run on `windows-latests`
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, buildjet-4vcpu-ubuntu-2204-arm]
         type: ['', '--release']
     runs-on: ${{matrix.os}}
     steps:
     - uses: denoland/setup-deno@v1
+      if: ${{matrix.os != 'buildjet-4vcpu-ubuntu-2204-arm'}}
       with:
         deno-version: v1.*
+    - name: Download & install deno
+      if: ${{matrix.os == 'buildjet-4vcpu-ubuntu-2204-arm'}}
+      # use deno-arm from https://github.com/LukeChannings/deno-arm64
+      run: |
+        curl -s https://gist.githubusercontent.com/LukeChannings/09d53f5c364391042186518c8598b85e/raw/ac8cd8c675b985edd4b3e16df63ffef14d1f0e24/deno_install.sh | sh
+        echo "$HOME/.deno/bin" >> $GITHUB_PATH
     - uses: actions/checkout@v3
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+        components: rustfmt, clippy
     # Install a specific version of Bitcoin
     - run: ./.install/bitcoin.sh
     - run: bitcoind --version
