@@ -55,6 +55,22 @@ gantt
         Retrieve Config Options from Contract  :i5, 2023-04-06, 2d
         Integration testing     :i6, after i2, 7d
 
+    section P-12
+        Registration Clarity Smart Contract  :j1, 2023-04-17, 7d
+
+    section P-13
+        Disbursement Clarity Smart Contract  :j1, 2023-04-17, 7d
+
+    section P-15
+        Peg-in Clarity Smart Contract  :k1, after j1, 7d  
+
+    section P-17
+        Peg-out Request Clarity Smart Contract  :k1, after j1, 7d  
+        
+    section P-18
+        Peg-out Fulfillment Clarity Smart Contract  :k1, after j1, 7d  
+
+
 ```
 
 
