@@ -19,9 +19,12 @@ gantt
         Encrypted local store for private keys        :b4, after  b2, 7d
 
     section P-03
-        Commit-reveal peg operations in stacks-node     :c1, 2023-04-03, 14d
-        Frost adaptation                                :c2, after c1, 7d
-        Transaction construction and aggregation        :c3, after c1, 7d
+        Design doc and planning                         :c1, 2023-04-03, 14d
+        Stacks understanding reveal transactions        :c2, after c1, 14d
+        Reference revealer                              :c3, after c2, 14d
+        Reference committer                             :c4, after c3, 14d
+        End-to-end integration tests                    :c5, after c4, 14d
+        sBTC mini integration                           :c6, after c5, 14d
 
     section P-04
         Support hand-off in stacks node          :d1, after c1, 14d
