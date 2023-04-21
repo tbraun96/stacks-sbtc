@@ -40,7 +40,7 @@ impl LocalhostBitcoinNode {
         params: impl ureq::serde::Serialize,
     ) -> Result<serde_json::Value, Error> {
         let rpc = ureq::json!({"jsonrpc": "1.0", "id": "stx", "method": method, "params": params});
-        let response = ureq::post(url).send_json(&rpc).map_err(|e| {
+        let response = ureq::post(url).send_json(rpc).map_err(|e| {
             let err_str = e.to_string();
             let error_json = serde_json::json!({ "error": &err_str });
             let err_obj_opt = match e.into_response() {
