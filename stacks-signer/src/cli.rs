@@ -5,10 +5,6 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
-    /// Turn debugging information on
-    #[arg(short, long, action = clap::ArgAction::SetTrue)]
-    pub debug: bool,
-
     /// Subcommand action to take
     #[clap(subcommand)]
     pub command: Command,

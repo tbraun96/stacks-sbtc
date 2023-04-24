@@ -24,6 +24,17 @@ graph TD
     S[Signer]-->|DKG+Signing|P
 ```
 
+## Usage
+```
+Usage: stacks-coordinator --config <CONFIG> --signer-config <SIGNER_CONFIG> run
+
+Options:
+  -h, --help  Print help
+```
+
+The log level can be set using the `RUST_LOG` env variable.
+The directive format is inherited from `tracing_subscriber::filter::EnvFilter`, and is documented [here](https://docs.rs/tracing-subscriber/0.3.17/tracing_subscriber/filter/struct.EnvFilter.html#directives).
+
 ## Design draft
 The coordinator is anticipated to consist of three main components for functionality:
 

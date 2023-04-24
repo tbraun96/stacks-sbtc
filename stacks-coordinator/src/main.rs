@@ -9,12 +9,7 @@ fn main() {
     let cli = Cli::parse();
 
     // Initialize logging
-    logging::initiate_tracing_subscriber(if cli.debug {
-        tracing::Level::DEBUG
-    } else {
-        tracing::Level::INFO
-    })
-    .unwrap();
+    logging::initiate_tracing_subscriber().unwrap();
 
     //TODO: get configs from sBTC contract
     match Config::from_path(&cli.config) {

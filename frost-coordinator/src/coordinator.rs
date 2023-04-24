@@ -172,8 +172,7 @@ where
             msg: MessageTypes::NonceRequest(nonce_request),
         };
 
-        // TODO(#286): Change back to debug level
-        info!(
+        debug!(
             "dkg_id #{} sign_id #{} sign_nonce_id #{}. NonceRequest sent",
             self.current_dkg_id, self.current_sign_id, self.current_sign_nonce_id
         );
@@ -306,8 +305,7 @@ where
         }
 
         // make an array of dkg public share polys for SignatureAggregator
-        // TODO(#286): Change back to debug
-        info!(
+        debug!(
             "collecting commitments from 1..{} in {:?}",
             self.total_keys,
             self.dkg_public_shares.keys().collect::<Vec<&u32>>()
@@ -318,8 +316,7 @@ where
             .map(|ps| ps.public_share.clone())
             .collect();
 
-        // TODO(#286): Change back to debug
-        info!(
+        debug!(
             "SignatureAggregator::new total_keys: {} threshold: {} commitments: {}",
             self.total_keys,
             self.threshold,

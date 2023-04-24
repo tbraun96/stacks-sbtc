@@ -4,10 +4,6 @@ use clap::Parser;
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
-    /// Turn debugging information on
-    #[arg(short, long, action = clap::ArgAction::SetTrue)]
-    pub debug: bool,
-
     /// Config file path
     /// TODO: pull this info from sBTC
     #[arg(short, long)]

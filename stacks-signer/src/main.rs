@@ -10,12 +10,7 @@ fn main() {
     let cli = Cli::parse();
 
     // Initialize logging
-    logging::initiate_tracing_subscriber(if cli.debug {
-        tracing::Level::DEBUG
-    } else {
-        tracing::Level::INFO
-    })
-    .unwrap();
+    logging::initiate_tracing_subscriber().unwrap();
 
     // Determine what action the caller wishes to perform
     match cli.command {
