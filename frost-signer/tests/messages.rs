@@ -1,4 +1,6 @@
-use frost_signer::signing_round::{DkgBegin, MessageTypes, SignatureShareRequest, SigningRound};
+use frost_signer::signing_round::{
+    DkgBegin, MessageTypes, NonceResponse, SignatureShareRequest, SigningRound,
+};
 use wtfrost::common::PublicNonce;
 
 #[ignore]
@@ -29,18 +31,20 @@ fn dkg_begin() {
 #[test]
 fn signature_share() {
     let share = SignatureShareRequest {
-        sign_id: 0,
         dkg_id: 0,
+        sign_id: 0,
         correlation_id: 0,
-        party_id: 0,
-        nonces: [(
-            0,
-            PublicNonce {
+        nonce_responses: vec![NonceResponse {
+            dkg_id: 0,
+            sign_id: 0,
+            sign_nonce_id: 0,
+            signer_id: 0,
+            key_ids: vec![0],
+            nonces: vec![PublicNonce {
                 D: Default::default(),
                 E: Default::default(),
-            },
-        )]
-        .to_vec(),
+            }],
+        }],
         message: vec![],
     };
 

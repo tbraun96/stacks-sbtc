@@ -154,7 +154,7 @@ fn poll_loop(
                         assert!(msg.verify(&m.sig, &signer_public_keys[msg.signer_id - 1]))
                     }
                     MessageTypes::DkgPublicShare(msg) => {
-                        assert!(msg.verify(&m.sig, &key_public_keys[msg.party_id as usize]))
+                        assert!(msg.verify(&m.sig, &key_public_keys[msg.party_id as usize - 1]))
                     }
                     MessageTypes::DkgPrivateShares(msg) => {
                         assert!(msg.verify(&m.sig, &key_public_keys[msg.key_id as usize]))
@@ -170,13 +170,13 @@ fn poll_loop(
                         assert!(msg.verify(&m.sig, &coordinator_public_key))
                     }
                     MessageTypes::NonceResponse(msg) => {
-                        assert!(msg.verify(&m.sig, &key_public_keys[msg.party_id as usize]))
+                        assert!(msg.verify(&m.sig, &signer_public_keys[msg.signer_id as usize - 1]))
                     }
                     MessageTypes::SignShareRequest(msg) => {
                         assert!(msg.verify(&m.sig, &coordinator_public_key))
                     }
                     MessageTypes::SignShareResponse(msg) => {
-                        assert!(msg.verify(&m.sig, &key_public_keys[msg.party_id as usize]))
+                        assert!(msg.verify(&m.sig, &signer_public_keys[msg.signer_id as usize - 1]))
                     }
                 }
 

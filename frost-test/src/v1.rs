@@ -13,7 +13,7 @@ mod tests {
 
         let mut signer = v1::Signer::new(&ids, n, t, &mut rng);
 
-        assert_eq!(signer.parties.len(), ids.len());
+        assert_eq!(signer.get_key_ids().len(), ids.len());
         signer.gen_nonces(&mut rng);
 
         let nonces = signer.gen_nonces(&mut rng);

@@ -15,7 +15,7 @@ use hashbrown::HashSet;
 use tracing::{debug, info, warn};
 use wtfrost::{
     bip340::{Error as Bip340Error, SchnorrProof},
-    common::{PolyCommitment, PublicNonce, Signature},
+    common::{PolyCommitment, PublicNonce, Signature, SignatureShare},
     compute,
     errors::AggregatorError,
     v1, Point, Scalar,
@@ -47,7 +47,7 @@ pub struct Coordinator<Network: NetListen> {
     network: Network,
     dkg_public_shares: BTreeMap<u32, DkgPublicShare>,
     public_nonces: BTreeMap<u32, NonceResponse>,
-    signature_shares: BTreeMap<u32, v1::SignatureShare>,
+    signature_shares: BTreeMap<u32, Vec<SignatureShare>>,
     aggregate_public_key: Point,
     network_private_key: Scalar,
     signer_public_keys: Vec<String>,
@@ -166,22 +166,28 @@ where
         };
 
         let nonce_request_message = Message {
-            sig: nonce_request.sign(&self.network_private_key).expect(""),
+            sig: nonce_request
+                .sign(&self.network_private_key)
+                .expect("Failed to sign NonceRequest"),
             msg: MessageTypes::NonceRequest(nonce_request),
         };
 
-        debug!("dkg_id #{}. NonceRequest sent.", self.current_dkg_id);
+        // TODO(#286): Change back to debug level
+        info!(
+            "dkg_id #{} sign_id #{} sign_nonce_id #{}. NonceRequest sent",
+            self.current_dkg_id, self.current_sign_id, self.current_sign_nonce_id
+        );
         self.network.send_message(nonce_request_message)?;
 
         loop {
             match self.wait_for_next_message()?.msg {
                 MessageTypes::NonceRequest(_) => {}
                 MessageTypes::NonceResponse(nonce_response) => {
-                    let party_id = nonce_response.party_id;
-                    self.public_nonces.insert(party_id, nonce_response);
+                    let signer_id = nonce_response.signer_id;
+                    self.public_nonces.insert(signer_id, nonce_response);
                     debug!(
-                        "NonceResponse from party #{:?}. Got {} nonce responses of threshold {}",
-                        party_id,
+                        "NonceResponse from signer #{:?}. Got {} nonce responses of threshold {}",
+                        signer_id,
                         self.public_nonces.len(),
                         self.threshold,
                     );
@@ -191,7 +197,7 @@ where
                 }
             }
 
-            if self.public_nonces.len() == self.total_keys {
+            if self.public_nonces.len() == self.total_signers {
                 debug!("Nonce threshold of {} met.", self.threshold);
                 break;
             }
@@ -203,57 +209,73 @@ where
     fn compute_aggregate_nonce(&mut self, msg: &[u8]) -> Result<Point, Error> {
         info!("Computing aggregate nonce...");
         self.collect_nonces()?;
-        let ids: Vec<usize> = self.public_nonces.keys().map(|i| *i as usize).collect();
-        let nonces: Vec<PublicNonce> = self
+        // XXX this needs to be key_ids for v1 and signer_ids for v2
+        let party_ids = self
             .public_nonces
             .values()
-            .map(|n| n.nonce.clone())
-            .collect();
-        let (_, R) = compute::intermediate(msg, &ids, &nonces);
+            .flat_map(|pn| {
+                pn.key_ids
+                    .iter()
+                    .map(|id| *id as usize)
+                    .collect::<Vec<usize>>()
+            })
+            .collect::<Vec<usize>>();
+        let nonces = self
+            .public_nonces
+            .values()
+            .flat_map(|pn| pn.nonces.clone())
+            .collect::<Vec<PublicNonce>>();
+        let (_, R) = compute::intermediate(msg, &party_ids, &nonces);
         Ok(R)
     }
 
     fn request_signature_shares(
         &self,
-        nonces: &[(u32, PublicNonce)],
+        nonce_responses: &[NonceResponse],
         msg: &[u8],
     ) -> Result<(), Error> {
-        for party_id in self.public_nonces.keys() {
-            let signature_share_request = SignatureShareRequest {
-                dkg_id: self.current_dkg_id,
-                sign_id: self.current_sign_id,
-                correlation_id: 0,
-                party_id: *party_id,
-                nonces: nonces.to_owned(),
-                message: msg.to_vec(),
-            };
+        let signature_share_request = SignatureShareRequest {
+            dkg_id: self.current_dkg_id,
+            sign_id: self.current_sign_id,
+            correlation_id: 0,
+            nonce_responses: nonce_responses.to_vec(),
+            message: msg.to_vec(),
+        };
 
-            let signature_share_request_message = Message {
-                sig: signature_share_request
-                    .sign(&self.network_private_key)
-                    .expect(""),
-                msg: MessageTypes::SignShareRequest(signature_share_request),
-            };
+        info!(
+            "Sending SignShareRequest dkg_id #{} sign_id #{} to signers",
+            signature_share_request.dkg_id, signature_share_request.sign_id
+        );
 
-            self.network.send_message(signature_share_request_message)?;
-        }
+        let signature_share_request_message = Message {
+            sig: signature_share_request
+                .sign(&self.network_private_key)
+                .expect("Failed to sign SignShareRequest"),
+            msg: MessageTypes::SignShareRequest(signature_share_request),
+        };
+
+        self.network.send_message(signature_share_request_message)?;
+
         Ok(())
     }
 
     fn collect_signature_shares(&mut self) -> Result<(), Error> {
         // get the parties who responded with a nonce
-        let mut signature_shares: HashSet<u32> =
-            HashSet::from_iter(self.public_nonces.keys().cloned());
-        while !signature_shares.is_empty() {
+        let mut signers: HashSet<u32> = HashSet::from_iter(self.public_nonces.keys().cloned());
+        while !signers.is_empty() {
             match self.wait_for_next_message()?.msg {
                 MessageTypes::SignShareResponse(response) => {
-                    if let Some(_party_id) = signature_shares.take(&response.party_id) {
+                    if let Some(_party_id) = signers.take(&response.signer_id) {
+                        info!(
+                            "Insert signature shares for signer_id {}",
+                            &response.signer_id
+                        );
                         self.signature_shares
-                            .insert(response.party_id, response.signature_share);
+                            .insert(response.signer_id, response.signature_shares.clone());
                     }
                     debug!(
-                        "signature share for {} received.  left to receive: {:?}",
-                        response.party_id, signature_shares
+                        "signature shares for {} received.  left to receive: {:?}",
+                        response.signer_id, signers
                     );
                 }
                 MessageTypes::SignShareRequest(_) => {}
@@ -284,7 +306,8 @@ where
         }
 
         // make an array of dkg public share polys for SignatureAggregator
-        debug!(
+        // TODO(#286): Change back to debug
+        info!(
             "collecting commitments from 1..{} in {:?}",
             self.total_keys,
             self.dkg_public_shares.keys().collect::<Vec<&u32>>()
@@ -295,7 +318,8 @@ where
             .map(|ps| ps.public_share.clone())
             .collect();
 
-        debug!(
+        // TODO(#286): Change back to debug
+        info!(
             "SignatureAggregator::new total_keys: {} threshold: {} commitments: {}",
             self.total_keys,
             self.threshold,
@@ -304,32 +328,30 @@ where
 
         let mut aggregator = v1::SignatureAggregator::new(self.total_keys, self.threshold, polys)?;
 
-        let id_nonces: Vec<(u32, PublicNonce)> = self
-            .public_nonces
-            .iter()
-            .map(|(i, n)| (*i, n.nonce.clone()))
-            .collect();
+        let nonce_responses: Vec<NonceResponse> = self.public_nonces.values().cloned().collect();
 
         // request signature shares
-        self.request_signature_shares(&id_nonces, msg)?;
+        self.request_signature_shares(&nonce_responses, msg)?;
         self.collect_signature_shares()?;
 
-        let nonces = id_nonces
+        let nonces = nonce_responses
             .iter()
-            .map(|(_i, n)| n.clone())
+            .flat_map(|nr| nr.nonces.clone())
             .collect::<Vec<PublicNonce>>();
-        let shares = id_nonces
+        let shares = &self
+            .public_nonces
             .iter()
-            .map(|(i, _n)| self.signature_shares[i].clone())
-            .collect::<Vec<v1::SignatureShare>>();
-        debug!(
+            .flat_map(|(i, _)| self.signature_shares[i].clone())
+            .collect::<Vec<SignatureShare>>();
+
+        info!(
             "aggregator.sign({:?}, {:?}, {:?})",
             msg,
             nonces.len(),
             shares.len()
         );
 
-        let sig = aggregator.sign(msg, &nonces, &shares)?;
+        let sig = aggregator.sign(msg, &nonces, shares)?;
 
         info!("Signature ({}, {})", sig.R, sig.z);
 
@@ -447,7 +469,7 @@ where
                             assert!(msg.verify(&m.sig, &signer_public_keys[msg.signer_id - 1]))
                         }
                         MessageTypes::DkgPublicShare(msg) => {
-                            assert!(msg.verify(&m.sig, &key_public_keys[msg.party_id as usize]))
+                            assert!(msg.verify(&m.sig, &key_public_keys[msg.party_id as usize - 1]))
                         }
                         MessageTypes::DkgPrivateShares(msg) => {
                             assert!(msg.verify(&m.sig, &key_public_keys[msg.key_id as usize]))
@@ -457,19 +479,19 @@ where
                         }
                         MessageTypes::DkgQueryResponse(msg) => {
                             let key_id = msg.public_share.id.id.get_u32();
-                            assert!(msg.verify(&m.sig, &key_public_keys[key_id as usize - 1]));
+                            assert!(msg.verify(&m.sig, &key_public_keys[key_id as usize - 1]))
                         }
                         MessageTypes::NonceRequest(msg) => {
                             assert!(msg.verify(&m.sig, &coordinator_public_key))
                         }
                         MessageTypes::NonceResponse(msg) => {
-                            assert!(msg.verify(&m.sig, &key_public_keys[msg.party_id as usize]))
+                            assert!(msg.verify(&m.sig, &signer_public_keys[msg.signer_id as usize]))
                         }
                         MessageTypes::SignShareRequest(msg) => {
                             assert!(msg.verify(&m.sig, &coordinator_public_key))
                         }
                         MessageTypes::SignShareResponse(msg) => {
-                            assert!(msg.verify(&m.sig, &key_public_keys[msg.party_id as usize]))
+                            assert!(msg.verify(&m.sig, &signer_public_keys[msg.signer_id as usize]))
                         }
                     }
                     Ok(m)
