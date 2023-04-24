@@ -1,5 +1,5 @@
 use clap::Parser;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use frost_signer::config::{Cli, Config};
 use frost_signer::logging;
@@ -10,7 +10,7 @@ fn main() {
 
     let cli = Cli::parse();
 
-    match Config::from_path(cli.config.clone()) {
+    match Config::from_path(&cli.config) {
         Ok(config) => {
             let mut signer = Signer::new(config, cli.id);
             info!(
@@ -25,7 +25,7 @@ fn main() {
             }
         }
         Err(e) => {
-            warn!("An error occrred reading config file {}: {}", cli.config, e);
+            error!("An error occrred reading config file {}: {}", cli.config, e);
         }
     }
 }

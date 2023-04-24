@@ -11,6 +11,7 @@ path = "src/lib.rs"    # The source file of the target.
 crate-type = ["lib"]   # The crate types to generate.
 
 [dependencies]
+backoff = { workspace = true }
 bincode = { workspace = true }
 clap = { workspace = true }
 p256k1 = { workspace = true }

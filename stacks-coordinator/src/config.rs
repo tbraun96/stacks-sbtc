@@ -31,6 +31,8 @@ pub struct Config {
     pub rusqlite_path: Option<String>,
     /// The network version we are using ('mainnet' or 'testnet'). Default: 'mainnet'
     pub network: Option<Network>,
+    /// The transaction fee in Satoshis used to broadcast transactions to the stacks node
+    pub transaction_fee: u64,
 }
 
 impl Config {

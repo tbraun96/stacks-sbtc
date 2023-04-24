@@ -1,7 +1,10 @@
 pub mod client;
 
-use blockstack_lib::chainstate::{burn::operations as burn_ops, stacks::StacksTransaction};
-use blockstack_lib::types::chainstate::StacksAddress;
+use blockstack_lib::{
+    chainstate::{burn::operations as burn_ops, stacks::StacksTransaction},
+    codec::Error as CodecError,
+    types::chainstate::StacksAddress,
+};
 
 /// Kinds of common errors used by stacks coordinator
 #[derive(thiserror::Error, Debug)]
@@ -10,12 +13,18 @@ pub enum Error {
     InvalidJsonEntry(String),
     #[error("Failed to find burn block height: {0}")]
     UnknownBlockHeight(u64),
-    #[error("JSON serialization Error: {0}")]
+    #[error("{0}")]
     JsonError(#[from] serde_json::Error),
-    #[error("Reqwest Error: {0}")]
+    #[error("{0}")]
     ReqwestError(#[from] reqwest::Error),
-    #[error("Blockstack Error: {0}")]
-    BlockstackError(#[from] blockstack_lib::codec::Error),
+    #[error("Failed to serialize transaction. {0}")]
+    CodecError(#[from] CodecError),
+    #[error("Failed to connect to stacks node.")]
+    Timeout,
+    #[error("Failed to load Stacks chain tip.")]
+    BehindChainTip,
+    #[error("Broadcast failure: {0}")]
+    BroadcastFailure(String),
 }
 
 #[cfg_attr(test, mockall::automock)]

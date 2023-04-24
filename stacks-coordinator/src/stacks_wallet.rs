@@ -9,64 +9,45 @@ use blockstack_lib::{
         C32_ADDRESS_VERSION_TESTNET_SINGLESIG,
     },
     chainstate::stacks::{
-        address::PoxAddress, StacksTransaction, StacksTransactionSigner, TransactionAnchorMode,
-        TransactionAuth, TransactionContractCall, TransactionPayload, TransactionSpendingCondition,
-        TransactionVersion,
+        StacksTransaction, StacksTransactionSigner, TransactionAnchorMode, TransactionAuth,
+        TransactionContractCall, TransactionPayload, TransactionPostConditionMode,
+        TransactionSpendingCondition, TransactionVersion,
     },
-    codec::Error as CodecError,
     core::{CHAIN_ID_MAINNET, CHAIN_ID_TESTNET},
-    net::Error as NetError,
     types::{
         chainstate::{StacksAddress, StacksPrivateKey, StacksPublicKey},
         Address,
     },
-    util::HexError,
     vm::{
-        errors::{Error as ClarityError, RuntimeErrorType},
+        errors::RuntimeErrorType,
         types::{ASCIIData, StacksAddressExtensions},
         ClarityName, ContractName, Value,
     },
 };
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, PartialEq)]
 pub enum Error {
-    #[error("type conversion error from blockstack::bitcoin to bitcoin:: {0}")]
-    ConversionError(#[from] bitcoin::hashes::Error),
-    ///An invalid contract was specified in the config file
-    #[error("Invalid contract name and address: {0}")]
-    InvalidContract(String),
-    ///An invalid peg out
-    #[error("Invalid peg wallet address: {0}")]
-    InvalidAddress(PoxAddress),
-    ///An invalid public key
-    #[error("Invalid public key: {0}")]
-    InvalidPublicKey(String),
-    #[error("Invalid private key: {0}")]
-    InvalidPrivateKey(String),
-    #[error("Failed to sign transaction.")]
-    SigningError,
-    #[error("Hex error: {0}")]
-    ConversionErrorHex(#[from] HexError),
-    #[error("Stacks network error: {0}")]
-    NetworkError(#[from] NetError),
-    #[error("Clarity runtime error: {0}")]
+    ///Error due to invalid configuration values
+    #[error("{0}")]
+    ConfigError(String),
+    ///Error occured while signing a transaction
+    #[error("Failed to sign transaction: {0}")]
+    SigningError(String),
+    ///Error occurred due to a malformed op
+    #[error("{0}")]
+    MalformedOp(String),
+    ///Error occurred at Clarity runtime
+    #[error("Clarity runtime error ocurred: {0}")]
     ClarityRuntimeError(#[from] RuntimeErrorType),
-    #[error("Clarity error: {0}")]
-    ClarityGeneralError(#[from] ClarityError),
-    #[error("Stacks Code error: {0}")]
-    StacksCodeError(#[from] CodecError),
-    #[error("Invalid peg-out request op: {0}")]
-    InvalidPegOutRequestOp(String),
-    #[error("Failed to recover sBTC address from peg-out request op")]
-    RecoverError,
 }
 
 pub struct StacksWallet {
     contract_address: StacksAddress,
-    contract_name: String,
+    contract_name: ContractName,
     sender_key: StacksPrivateKey,
     version: TransactionVersion,
     address: StacksAddress,
+    fee: u64,
 }
 
 impl StacksWallet {
@@ -74,41 +55,44 @@ impl StacksWallet {
         contract: String,
         sender_key: &str,
         version: TransactionVersion,
+        fee: u64,
     ) -> Result<Self, Error> {
         let sender_key = StacksPrivateKey::from_hex(sender_key)
-            .map_err(|e| Error::InvalidPrivateKey(e.to_string()))?;
+            .map_err(|e| Error::ConfigError(e.to_string()))?;
 
         let pk = StacksPublicKey::from_private(&sender_key);
-        let addr_version = match version {
-            TransactionVersion::Mainnet => C32_ADDRESS_VERSION_MAINNET_SINGLESIG,
-            TransactionVersion::Testnet => C32_ADDRESS_VERSION_TESTNET_SINGLESIG,
-        };
 
         let address = StacksAddress::from_public_keys(
-            addr_version,
+            address_version(&version),
             &AddressHashMode::SerializeP2PKH,
             1,
             &vec![pk],
         )
-        .ok_or(Error::InvalidPrivateKey(
-            "Failed to generate address from public key".to_string(),
-        ))
-        .map_err(Error::from)?;
+        .ok_or(Error::ConfigError(
+            "Failed to generate stacks address from private key.".to_string(),
+        ))?;
 
         let contract_info: Vec<&str> = contract.split('.').collect();
         if contract_info.len() != 2 {
-            return Err(Error::InvalidContract(contract));
+            return Err(Error::ConfigError(
+                "Invalid sBTC contract. Expected a period seperated contract address and contract name."
+            .to_string()));
         }
+        let contract_address = contract_info[0];
+        let contract_name = contract_info[1].to_owned();
 
-        let contract_address = StacksAddress::from_string(contract_info[0]).ok_or(
-            Error::InvalidContract("Failed to parse contract address".to_string()),
+        let contract_address = StacksAddress::from_string(contract_address).ok_or(
+            Error::ConfigError("Invalid sBTC contract address.".to_string()),
         )?;
+        let contract_name = ContractName::try_from(contract_name)
+            .map_err(|_| Error::ConfigError("Invalid sBTC contract name.".to_string()))?;
         Ok(Self {
             contract_address,
-            contract_name: contract_info[1].to_owned(),
+            contract_name,
             sender_key,
             version,
             address,
+            fee,
         })
     }
 
@@ -123,10 +107,14 @@ impl StacksWallet {
 
         // Do the signing
         let mut tx_signer = StacksTransactionSigner::new(&unsigned_tx);
-        tx_signer.sign_origin(&self.sender_key)?;
+        tx_signer
+            .sign_origin(&self.sender_key)
+            .map_err(|e| Error::SigningError(e.to_string()))?;
 
         // Retrieve the signed transaction from the signer
-        let signed_tx = tx_signer.get_tx().ok_or(Error::SigningError)?;
+        let signed_tx = tx_signer.get_tx().ok_or(Error::SigningError(
+            "Unable to retrieve signed transaction from the signer.".to_string(),
+        ))?;
         Ok(signed_tx)
     }
 
@@ -143,37 +131,37 @@ impl StacksWallet {
         let public_key = StacksPublicKey::from_private(&self.sender_key);
         let mut spending_condition = TransactionSpendingCondition::new_singlesig_p2pkh(public_key)
             .ok_or_else(|| {
-                Error::InvalidPublicKey(
-                    "Failed to create single sig transaction spending condition.".to_string(),
+                Error::SigningError(
+                    "Failed to create transaction spending condition from provided sender_key."
+                        .to_string(),
                 )
             })?;
         spending_condition.set_nonce(nonce);
-        spending_condition.set_tx_fee(0);
+        spending_condition.set_tx_fee(self.fee);
         let auth = TransactionAuth::Standard(spending_condition);
 
         // Viola! We have an unsigned transaction
-        let mut tx = StacksTransaction::new(self.version, auth, payload);
-        let chain_id = if self.version == TransactionVersion::Testnet {
+        let mut unsigned_tx = StacksTransaction::new(self.version, auth, payload);
+        unsigned_tx.anchor_mode = TransactionAnchorMode::Any;
+        unsigned_tx.post_condition_mode = TransactionPostConditionMode::Allow;
+        unsigned_tx.chain_id = if self.version == TransactionVersion::Testnet {
             CHAIN_ID_TESTNET
         } else {
             CHAIN_ID_MAINNET
         };
-        tx.chain_id = chain_id;
-        tx.anchor_mode = TransactionAnchorMode::Any;
 
-        Ok(tx)
+        Ok(unsigned_tx)
     }
 
     fn build_transaction_payload(
         &self,
         function_name: impl Into<String>,
         function_args: Vec<Value>,
-    ) -> Result<TransactionPayload, Error> {
-        let contract_name = ContractName::try_from(self.contract_name.clone())?;
+    ) -> Result<TransactionPayload, RuntimeErrorType> {
         let function_name = ClarityName::try_from(function_name.into())?;
         let payload = TransactionContractCall {
             address: self.contract_address,
-            contract_name,
+            contract_name: self.contract_name.clone(),
             function_name,
             function_args,
         };
@@ -183,7 +171,7 @@ impl StacksWallet {
 
 impl StacksWalletTrait for StacksWallet {
     fn build_mint_transaction(
-        &mut self,
+        &self,
         op: &PegInOp,
         nonce: u64,
     ) -> Result<StacksTransaction, PegWalletError> {
@@ -194,7 +182,7 @@ impl StacksWalletTrait for StacksWallet {
         let principal = Value::from(op.recipient.clone());
         //Note that this tx_id is only used to print info in the contract call.
         let tx_id = Value::from(ASCIIData {
-            data: op.txid.as_bytes().to_vec(),
+            data: op.txid.to_string().as_bytes().to_vec(),
         });
         let function_args: Vec<Value> = vec![amount, principal, tx_id];
         let tx = self.build_transaction_signed(function_name, function_args, nonce)?;
@@ -202,7 +190,7 @@ impl StacksWalletTrait for StacksWallet {
     }
 
     fn build_burn_transaction(
-        &mut self,
+        &self,
         op: &PegOutRequestOp,
         nonce: u64,
     ) -> Result<StacksTransaction, PegWalletError> {
@@ -212,13 +200,17 @@ impl StacksWalletTrait for StacksWallet {
         let amount = Value::UInt(op.amount.into());
         // Retrieve the stacks address to burn from
         let address = op
-            .stx_address(self.version as u8)
-            .map_err(|_| Error::RecoverError)?;
+            .stx_address(address_version(&self.version))
+            .map_err(|_| {
+                Error::MalformedOp(
+                    "Failed to recover stx address from peg-out request op.".to_string(),
+                )
+            })?;
         let principal_data = address.to_account_principal();
         let principal = Value::Principal(principal_data);
         //Note that this tx_id is only used to print info inside the contract call.
         let tx_id = Value::from(ASCIIData {
-            data: op.txid.to_bytes().to_vec(),
+            data: op.txid.to_string().as_bytes().to_vec(),
         });
         let function_args: Vec<Value> = vec![amount, principal, tx_id];
 
@@ -227,7 +219,7 @@ impl StacksWalletTrait for StacksWallet {
     }
 
     fn build_set_btc_address_transaction(
-        &mut self,
+        &self,
         address: &BitcoinAddress,
         nonce: u64,
     ) -> Result<StacksTransaction, PegWalletError> {
@@ -246,125 +238,57 @@ impl StacksWalletTrait for StacksWallet {
     }
 }
 
+fn address_version(version: &TransactionVersion) -> u8 {
+    match version {
+        TransactionVersion::Mainnet => C32_ADDRESS_VERSION_MAINNET_SINGLESIG,
+        TransactionVersion::Testnet => C32_ADDRESS_VERSION_TESTNET_SINGLESIG,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{peg_wallet::StacksWallet as StacksWalletTrait, stacks_wallet::StacksWallet};
+    use crate::{
+        peg_wallet::StacksWallet as StacksWalletTrait,
+        stacks_wallet::StacksWallet,
+        util::test::{build_peg_out_request_op, PRIVATE_KEY_HEX, PUBLIC_KEY_HEX},
+    };
     use bitcoin::{secp256k1::Secp256k1, XOnlyPublicKey};
     use blockstack_lib::{
-        burnchains::{
-            bitcoin::{
-                address::{BitcoinAddress, SegwitBitcoinAddress},
-                BitcoinTransaction, BitcoinTxInput, BitcoinTxOutput,
-            },
-            BurnchainBlockHeader, BurnchainTransaction, PrivateKey, Txid,
-        },
+        address::C32_ADDRESS_VERSION_TESTNET_SINGLESIG,
+        burnchains::Txid,
         chainstate::{
-            burn::{
-                operations::{PegInOp, PegOutRequestOp},
-                Opcodes,
-            },
+            burn::operations::{PegInOp, PegOutRequestOp},
             stacks::{address::PoxAddress, TransactionVersion},
         },
-        types::chainstate::{BurnchainHeaderHash, StacksAddress, StacksPrivateKey},
-        util::hash::{Hash160, Sha256Sum},
+        types::chainstate::{BurnchainHeaderHash, StacksAddress},
+        util::{hash::Hash160, secp256k1::MessageSignature},
         vm::types::{PrincipalData, StandardPrincipalData},
     };
     use rand::Rng;
     use std::str::FromStr;
 
     fn pox_address() -> PoxAddress {
-        PoxAddress::Standard(StacksAddress::new(0, Hash160::from_data(&[0; 20])), None)
+        PoxAddress::Standard(
+            StacksAddress::new(
+                C32_ADDRESS_VERSION_TESTNET_SINGLESIG,
+                Hash160::from_data(&rand::thread_rng().gen::<[u8; 20]>()),
+            ),
+            None,
+        )
     }
 
     fn stacks_wallet() -> StacksWallet {
         StacksWallet::new(
             "SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sbtc-alpha".to_string(),
-            &"b244296d5907de9864c0b0d51f98a13c52890be0404e83f273144cd5b9960eed01".to_string(),
-            TransactionVersion::Mainnet,
+            PRIVATE_KEY_HEX,
+            TransactionVersion::Testnet,
+            10,
         )
-        .unwrap()
-    }
-
-    fn build_empty_block_header() -> BurnchainBlockHeader {
-        BurnchainBlockHeader {
-            block_height: 0,
-            block_hash: [0; 32].into(),
-            parent_block_hash: [0; 32].into(),
-            num_txs: 0,
-            timestamp: 0,
-        }
-    }
-
-    fn build_burnchain_transaction(
-        opcode: u8,
-        data: Vec<u8>,
-        inputs: Vec<BitcoinTxInput>,
-        outputs: Vec<BitcoinTxOutput>,
-    ) -> BurnchainTransaction {
-        BurnchainTransaction::Bitcoin(BitcoinTransaction {
-            txid: Txid([0; 32]),
-            vtxindex: 0,
-            opcode,
-            data,
-            data_amt: 0,
-            inputs,
-            outputs,
-        })
-    }
-
-    fn build_peg_out_request_op(private_key: StacksPrivateKey) -> PegOutRequestOp {
-        let mut rng = rand::thread_rng();
-
-        // Build a dust txo
-        let dust_amount = 1;
-        let recipient_address_bytes = rng.gen::<[u8; 32]>();
-        let output2 = BitcoinTxOutput {
-            units: dust_amount,
-            address: BitcoinAddress::Segwit(SegwitBitcoinAddress::P2TR(
-                true,
-                recipient_address_bytes,
-            )),
-        };
-
-        // Build a fulfillment fee txo
-        let peg_wallet_address = rng.gen::<[u8; 32]>();
-        let fulfillment_fee = 3;
-        let output3 = BitcoinTxOutput {
-            units: fulfillment_fee,
-            address: BitcoinAddress::Segwit(SegwitBitcoinAddress::P2TR(true, peg_wallet_address)),
-        };
-
-        // Generate the message signature by signing the amount and recipient fields
-        let amount: u64 = 10;
-        let mut script_pubkey = vec![81, 32]; // OP_1 OP_PUSHBYTES_32
-        script_pubkey.extend_from_slice(&recipient_address_bytes);
-
-        let mut msg = amount.to_be_bytes().to_vec();
-        msg.extend_from_slice(&script_pubkey);
-
-        let signature = private_key
-            .sign(Sha256Sum::from_data(&msg).as_bytes())
-            .expect("Failed to sign amount and recipient fields.");
-
-        let mut data = vec![];
-        data.extend_from_slice(&amount.to_be_bytes());
-        data.extend_from_slice(signature.as_bytes());
-
-        let outputs = vec![output2, output3];
-        let inputs = vec![];
-
-        // Build the burnchain tx using the above generated data
-        let tx = build_burnchain_transaction(Opcodes::PegOutRequest as u8, data, inputs, outputs);
-
-        // Build an empty block header
-        let header = build_empty_block_header();
-
-        // use the header and tx to generate a peg out request
-        PegOutRequestOp::from_tx(&header, &tx).expect("Failed to construct peg-out request op")
+        .expect("Failed to construct a stacks wallet for testing.")
     }
 
     #[test]
-    fn stacks_mint_test() {
+    fn build_mint_transaction_test() {
         let p = PegInOp {
             recipient: PrincipalData::Standard(StandardPrincipalData(0, [0u8; 20])),
             peg_wallet_address: pox_address(),
@@ -375,18 +299,18 @@ mod tests {
             block_height: 0,
             burn_header_hash: BurnchainHeaderHash([0; 32]),
         };
-        let mut wallet = stacks_wallet();
+        let wallet = stacks_wallet();
         let tx = wallet
             .build_mint_transaction(&p, 0)
             .expect("Failed to construct mint transaction.");
         tx.verify()
-            .expect("build_minttransaction generated a transaction with an invalid signature");
+            .expect("build_mint_transaction generated a transaction with an invalid signature");
     }
 
     #[test]
-    fn stacks_burn_test() {
-        let mut wallet = stacks_wallet();
-        let op = build_peg_out_request_op(wallet.sender_key);
+    fn build_burn_transaction_test() {
+        let wallet = stacks_wallet();
+        let op = build_peg_out_request_op(PRIVATE_KEY_HEX, 10, 1, 3);
         let tx = wallet
             .build_burn_transaction(&op, 0)
             .expect("Failed to construct burn transaction.");
@@ -395,12 +319,35 @@ mod tests {
     }
 
     #[test]
-    fn stacks_build_set_btc_address_transaction() {
-        let mut wallet = stacks_wallet();
-        let internal_key = XOnlyPublicKey::from_str(
-            "cc8a4bc64d897bddc5fbc2f670f7a8ba0b386779106cf1223c6fc5d7cd6fc115",
-        )
-        .unwrap();
+    fn invalid_burn_op_test() {
+        let wallet = stacks_wallet();
+        // Construct an invalid peg-out request op.
+        let op = PegOutRequestOp {
+            amount: 1000,
+            recipient: pox_address(),
+            signature: MessageSignature([0x00; 65]),
+            peg_wallet_address: pox_address(),
+            fulfillment_fee: 0,
+            memo: vec![],
+            txid: Txid([0x04; 32]),
+            vtxindex: 0,
+            block_height: 0,
+            burn_header_hash: BurnchainHeaderHash([0x00; 32]),
+        };
+        assert_eq!(
+            wallet
+                .build_burn_transaction(&op, 0)
+                .err()
+                .unwrap()
+                .to_string(),
+            "Stacks Wallet Error: Failed to recover stx address from peg-out request op."
+        );
+    }
+
+    #[test]
+    fn build_set_btc_address_transaction_test() {
+        let wallet = stacks_wallet();
+        let internal_key = XOnlyPublicKey::from_str(PUBLIC_KEY_HEX).unwrap();
         let secp = Secp256k1::verification_only();
         let address = bitcoin::Address::p2tr(&secp, internal_key, None, bitcoin::Network::Testnet);
 
@@ -409,6 +356,59 @@ mod tests {
             .expect("Failed to construct a set btc address transaction.");
         tx.verify().expect(
             "build_set_btc_address_transaction generated a transaction with an invalid signature.",
+        );
+    }
+
+    #[test]
+    fn stacks_wallet_invalid_config_test() {
+        // Test an invalid key
+        assert_eq!(
+            StacksWallet::new(
+                "SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sbtc-alpha".to_string(),
+                "",
+                TransactionVersion::Testnet,
+                10
+            )
+            .err()
+            .unwrap()
+            .to_string(),
+            "Invalid private key hex string"
+        );
+        // Test an invalid contract
+        assert_eq!(
+            StacksWallet::new(
+                "SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTEsbtc-alpha".to_string(),
+                PRIVATE_KEY_HEX, TransactionVersion::Testnet, 10)
+                .err()
+                .unwrap()
+                .to_string(),
+                "Invalid sBTC contract. Expected a period seperated contract address and contract name."
+        );
+        // Test an invalid contract address
+        assert_eq!(
+            StacksWallet::new(
+                "SP3FBR2AGK5H9QBDH3EEN6DF8E.sbtc-alpha".to_string(),
+                PRIVATE_KEY_HEX,
+                TransactionVersion::Testnet,
+                10
+            )
+            .err()
+            .unwrap()
+            .to_string(),
+            "Invalid sBTC contract address."
+        );
+        // Test an invalid contract name
+        assert_eq!(
+            StacksWallet::new(
+                "SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.12".to_string(),
+                PRIVATE_KEY_HEX,
+                TransactionVersion::Testnet,
+                10
+            )
+            .err()
+            .unwrap()
+            .to_string(),
+            "Invalid sBTC contract name."
         );
     }
 }

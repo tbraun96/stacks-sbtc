@@ -26,6 +26,24 @@ use serde::{Deserialize, Serialize};
 pub const DEVNET_COORDINATOR_ID: usize = 0;
 pub const DEVNET_COORDINATOR_DKG_ID: u64 = 0; //TODO: Remove, this is a correlation id
 
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("{0}")]
+    NetworkError(#[from] HttpNetError),
+    #[error("No aggregate public key")]
+    NoAggregatePublicKey,
+    #[error("Aggregator failed to sign: {0}")]
+    Aggregator(#[from] AggregatorError),
+    #[error("BIP-340 error")]
+    Bip340(Bip340Error),
+    #[error("SchnorrProof failed to verify")]
+    SchnorrProofFailed,
+    #[error("Operation timed out")]
+    Timeout,
+    #[error("{0}")]
+    ConfigError(#[from] ConfigError),
+}
+
 #[derive(clap::Subcommand, Debug)]
 pub enum Command {
     Dkg,
@@ -134,7 +152,6 @@ where
             sig: dkg_begin.sign(&self.network_private_key).expect(""),
             msg: MessageTypes::DkgBegin(dkg_begin),
         };
-
         self.network.send_message(dkg_begin_message)?;
         Ok(())
     }
@@ -151,7 +168,6 @@ where
             sig: dkg_begin.sign(&self.network_private_key).expect(""),
             msg: MessageTypes::DkgPrivateBegin(dkg_begin),
         };
-
         self.network.send_message(dkg_private_begin_msg)?;
         Ok(())
     }
@@ -507,22 +523,4 @@ where
             .build();
         backoff::retry_notify(backoff_timer, get_next_message, notify).map_err(|_| Error::Timeout)
     }
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("Http network error: {0}")]
-    NetworkError(#[from] HttpNetError),
-    #[error("No aggregate public key")]
-    NoAggregatePublicKey,
-    #[error("Aggregator failed to sign: {0}")]
-    Aggregator(#[from] AggregatorError),
-    #[error("BIP-340 error")]
-    Bip340(Bip340Error),
-    #[error("SchnorrProof failed to verify")]
-    SchnorrProofFailed,
-    #[error("Operation timed out")]
-    Timeout,
-    #[error("Config Error: {0}")]
-    ConfigError(#[from] ConfigError),
 }

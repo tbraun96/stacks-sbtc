@@ -1,19 +1,16 @@
+use std::time::{Duration, Instant};
+
 use crate::stacks_node::{Error as StacksNodeError, PegInOp, PegOutRequestOp, StacksNode};
 use blockstack_lib::{
-    chainstate::stacks::{address::StacksAddressExtensions, StacksTransaction},
-    codec::StacksMessageCodec,
+    chainstate::stacks::StacksTransaction, codec::StacksMessageCodec,
     types::chainstate::StacksAddress,
 };
-use reqwest::blocking::Client;
+use reqwest::{
+    blocking::{Client, Response},
+    StatusCode,
+};
 use serde_json::Value;
-use tracing::debug;
-
-/// Kinds of common errors used by stacks coordinator
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("Stacks Node Error: {0}")]
-    StacksNodeError(#[from] StacksNodeError),
-}
+use tracing::{debug, warn};
 
 pub struct NodeClient {
     node_url: String,
@@ -32,29 +29,49 @@ impl NodeClient {
         format!("{}{}", self.node_url, route)
     }
 
-    fn get_response(&self, route: &str) -> Result<String, StacksNodeError> {
+    fn get_response(&self, route: &str) -> Result<Response, StacksNodeError> {
         let url = self.build_url(route);
         debug!("Sending Request to Stacks Node: {}", &url);
-        Ok(self.client.get(&url).send()?.text()?)
+        let now = Instant::now();
+        let notify = |_err, dur| {
+            debug!("Failed to connect to {}. Next attempt in {:?}", &url, dur);
+        };
+
+        let send_request = || {
+            if now.elapsed().as_secs() > 5 {
+                debug!("Timeout exceeded.");
+                return Err(backoff::Error::Permanent(StacksNodeError::Timeout));
+            }
+            let request = self.client.get(&url);
+            let response = request.send().map_err(StacksNodeError::ReqwestError)?;
+            Ok(response)
+        };
+        let backoff_timer = backoff::ExponentialBackoffBuilder::new()
+            .with_initial_interval(Duration::from_millis(2))
+            .with_max_interval(Duration::from_millis(128))
+            .build();
+
+        let response = backoff::retry_notify(backoff_timer, send_request, notify)
+            .map_err(|_| StacksNodeError::Timeout)?;
+
+        Ok(response)
     }
 
     fn get_burn_ops<T>(&self, block_height: u64, op: &str) -> Result<Vec<T>, StacksNodeError>
     where
         T: serde::de::DeserializeOwned,
     {
-        let response = self.get_response(&format!("/v2/burn_ops/{block_height}/{op}"))?;
-        let failure_msg = format!("Could not find burn block at height {block_height}");
-        if failure_msg == response {
-            Err(StacksNodeError::UnknownBlockHeight(block_height))
-        } else {
-            let json = serde_json::from_str::<Value>(&response)?;
-            Ok(serde_json::from_value(json[op].clone())?)
-        }
+        let json = self
+            .get_response(&format!("/v2/burn_ops/{block_height}/{op}"))?
+            .json::<Value>()
+            .map_err(|_| StacksNodeError::UnknownBlockHeight(block_height))?;
+        Ok(serde_json::from_value(json[op].clone())?)
     }
 }
 
 impl StacksNode for NodeClient {
     fn get_peg_in_ops(&self, block_height: u64) -> Result<Vec<PegInOp>, StacksNodeError> {
+        debug!("Retrieving peg-in ops...");
         self.get_burn_ops::<PegInOp>(block_height, "peg_in")
     }
 
@@ -62,36 +79,57 @@ impl StacksNode for NodeClient {
         &self,
         block_height: u64,
     ) -> Result<Vec<PegOutRequestOp>, StacksNodeError> {
+        debug!("Retrieving peg-out request ops...");
         self.get_burn_ops::<PegOutRequestOp>(block_height, "peg_out_request")
     }
 
     fn burn_block_height(&self) -> Result<u64, StacksNodeError> {
-        let response = self.get_response("/v2/info")?;
+        debug!("Retrieving burn block height...");
+        let json = self.get_response("/v2/info")?.json::<Value>()?;
         let entry = "burn_block_height";
-        let json: Value = serde_json::from_str(&response)?;
         json[entry]
             .as_u64()
             .ok_or_else(|| StacksNodeError::InvalidJsonEntry(entry.to_string()))
     }
 
-    fn next_nonce(&self, addr: &StacksAddress) -> Result<u64, StacksNodeError> {
-        let url = self.build_url(&format!("/v2/accounts/{}", addr.to_b58()));
+    fn next_nonce(&self, address: &StacksAddress) -> Result<u64, StacksNodeError> {
+        debug!("Retrieving next nonce...");
+        let address = address.to_string();
         let entry = "nonce";
-        self.client.get(url).send()?.json::<Value>().map(|json| {
-            json[entry]
-                .as_u64()
-                .map(|val| val + 1)
-                .ok_or_else(|| StacksNodeError::InvalidJsonEntry(entry.to_string()))
-        })?
+        let json = self
+            .get_response(&format!("/v2/accounts/{}", address))?
+            .json::<Value>()
+            .map_err(|_| StacksNodeError::BehindChainTip)?;
+        json[entry]
+            .as_u64()
+            .ok_or_else(|| StacksNodeError::InvalidJsonEntry(entry.to_string()))
     }
 
     fn broadcast_transaction(&self, tx: &StacksTransaction) -> Result<(), StacksNodeError> {
+        debug!("Broadcasting transaction...");
         let url = self.build_url("/v2/transactions");
         let mut buffer = vec![];
 
         tx.consensus_serialize(&mut buffer)?;
-        self.client.post(url).body(buffer).send()?;
 
+        let response = self
+            .client
+            .post(url)
+            .header("content-type", "application/octet-stream")
+            .body(buffer)
+            .send()?;
+
+        if response.status() != StatusCode::OK {
+            let json_response = response
+                .json::<serde_json::Value>()
+                .map_err(|_| StacksNodeError::BehindChainTip)?;
+            let error_str = json_response.as_str().unwrap_or("Unknown Reason");
+            warn!(
+                "Failed to broadcast transaction to the stacks node: {:?}",
+                error_str
+            );
+            return Err(StacksNodeError::BroadcastFailure(error_str.to_string()));
+        }
         Ok(())
     }
 }

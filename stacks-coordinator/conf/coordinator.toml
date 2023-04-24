@@ -5,3 +5,4 @@ bitcoin_node_rpc_url = "http://abcd:abcd@localhost:18445"
 frost_dkg_round_id = 0
 signer_config_path = ""
 network_private_key = ""
+transaction_fee = 2000

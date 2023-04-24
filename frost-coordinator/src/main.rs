@@ -3,7 +3,7 @@ use clap::Parser;
 use frost_coordinator::coordinator::Command;
 use frost_coordinator::create_coordinator;
 use frost_signer::logging;
-use tracing::warn;
+use tracing::{error, warn};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -28,7 +28,7 @@ fn main() {
             }
         }
         Err(e) => {
-            warn!("Failed to create coordinator: {}", e);
+            error!("Failed to create coordinator: {}", e);
         }
     }
 }

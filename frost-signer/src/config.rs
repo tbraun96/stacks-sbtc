@@ -45,8 +45,8 @@ impl Config {
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("IO Error: {0}")]
+    #[error("{0}")]
     IO(#[from] std::io::Error),
-    #[error("Toml Deserializer Error: {0}")]
+    #[error("{0}")]
     Toml(#[from] toml::de::Error),
 }

@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
-use tracing::{debug, info, warn};
+use std::{fmt::Debug, time::Duration};
+use tracing::{debug, warn};
 
 use crate::signing_round;
 // Message is the format over the wire
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Message {
     pub msg: signing_round::MessageTypes,
     pub sig: Vec<u8>,
@@ -98,29 +98,36 @@ impl Net for HttpNet {
     type Error = Error;
 
     fn send_message(&self, msg: Message) -> Result<(), Self::Error> {
-        let req = ureq::post(&self.http_relay_url);
-
         // sign message
-
         let bytes = bincode::serialize(&msg)?;
-        let result = req.send_bytes(&bytes[..]);
 
-        match result {
-            Ok(response) => {
-                debug!(
-                    "sent {:?} {} bytes {:?} to {}",
-                    &msg.msg,
-                    bytes.len(),
-                    &response,
-                    self.http_relay_url
-                )
-            }
-            Err(e) => {
-                info!("post failed to {} {}", self.http_relay_url, e);
-                return Err(Box::new(e).into());
-            }
+        let notify = |_err, dur| {
+            debug!(
+                "Failed to connect to {}. Next attempt in {:?}",
+                &self.http_relay_url, dur
+            );
         };
 
+        let send_request = || {
+            ureq::post(&self.http_relay_url)
+                .send_bytes(&bytes[..])
+                .map_err(backoff::Error::transient)
+        };
+        let backoff_timer = backoff::ExponentialBackoffBuilder::new()
+            .with_initial_interval(Duration::from_millis(2))
+            .with_max_interval(Duration::from_millis(128))
+            .build();
+
+        let response = backoff::retry_notify(backoff_timer, send_request, notify)
+            .map_err(|_| Error::Timeout)?;
+
+        debug!(
+            "sent {:?} {} bytes {:?} to {}",
+            &msg.msg,
+            bytes.len(),
+            &response,
+            self.http_relay_url
+        );
         Ok(())
     }
 }
@@ -129,9 +136,10 @@ impl Net for HttpNet {
 pub enum Error {
     #[error("Serialization failed: {0}")]
     SerializationError(#[from] bincode::Error),
-
-    #[error("Network error: {0}")]
+    #[error("{0}")]
     NetworkError(#[from] Box<ureq::Error>),
+    #[error("Failed to connect to network.")]
+    Timeout,
 }
 
 fn url_with_id(base: &str, id: u32) -> String {
