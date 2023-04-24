@@ -87,24 +87,24 @@ impl StacksNode for NodeClient {
 
     fn broadcast_transaction(&self, tx: &StacksTransaction) -> Result<(), StacksNodeError> {
         let url = self.build_url("/v2/transactions");
-
         let mut buffer = vec![];
 
         tx.consensus_serialize(&mut buffer)?;
+        self.client.post(url).body(buffer).send()?;
 
-        let _return = self
-            .client
-            .post(url)
-            .body(buffer)
-            // .json(tx)
-            .send()
-            .and_then(|res| res.json::<Value>())?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        io::{BufWriter, Read, Write},
+        net::{SocketAddr, TcpListener},
+        thread::{sleep, spawn},
+        time::Duration,
+    };
+
     use blockstack_lib::{
         chainstate::stacks::{
             CoinbasePayload, SinglesigHashMode, SinglesigSpendingCondition, TransactionAnchorMode,
@@ -116,31 +116,74 @@ mod tests {
 
     use super::*;
 
-    // Temporary debugging
     #[test]
-    #[ignore]
-    fn send_tx() {
-        let client = NodeClient::new("http://localhost:20443");
+    fn should_send_tx_bytes_to_node() {
+        let tx = StacksTransaction {
+            version: TransactionVersion::Testnet,
+            chain_id: 0,
+            auth: TransactionAuth::Standard(TransactionSpendingCondition::Singlesig(
+                SinglesigSpendingCondition {
+                    hash_mode: SinglesigHashMode::P2PKH,
+                    signer: Hash160([0; 20]),
+                    nonce: 0,
+                    tx_fee: 0,
+                    key_encoding: TransactionPublicKeyEncoding::Uncompressed,
+                    signature: MessageSignature([0; 65]),
+                },
+            )),
+            anchor_mode: TransactionAnchorMode::Any,
+            post_condition_mode: TransactionPostConditionMode::Allow,
+            post_conditions: vec![],
+            payload: TransactionPayload::Coinbase(CoinbasePayload([0; 32]), None),
+        };
 
-        client
-            .broadcast_transaction(&StacksTransaction {
-                version: TransactionVersion::Testnet,
-                chain_id: 0,
-                auth: TransactionAuth::Standard(TransactionSpendingCondition::Singlesig(
-                    SinglesigSpendingCondition {
-                        hash_mode: SinglesigHashMode::P2PKH,
-                        signer: Hash160([0; 20]),
-                        nonce: 0,
-                        tx_fee: 0,
-                        key_encoding: TransactionPublicKeyEncoding::Uncompressed,
-                        signature: MessageSignature([0; 65]),
-                    },
-                )),
-                anchor_mode: TransactionAnchorMode::Any,
-                post_condition_mode: TransactionPostConditionMode::Allow,
-                post_conditions: vec![],
-                payload: TransactionPayload::Coinbase(CoinbasePayload([0; 32]), None),
-            })
-            .unwrap();
+        let mut tx_bytes = [0u8; 1024];
+
+        {
+            let mut tx_bytes_writer = BufWriter::new(&mut tx_bytes[..]);
+
+            tx.consensus_serialize(&mut tx_bytes_writer).unwrap();
+
+            tx_bytes_writer.flush().unwrap();
+        }
+
+        let bytes_len = tx_bytes
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, &x)| x != 0)
+            .unwrap()
+            .0
+            + 1;
+
+        let mut mock_server_addr = SocketAddr::from(([127, 0, 0, 1], 0));
+        let mock_server = TcpListener::bind(mock_server_addr).unwrap();
+
+        mock_server_addr.set_port(mock_server.local_addr().unwrap().port());
+
+        let h = spawn(move || {
+            sleep(Duration::from_millis(100));
+
+            let client = NodeClient::new(&format!("http://{}", mock_server_addr));
+            client.broadcast_transaction(&tx).unwrap();
+        });
+
+        let mut request_bytes = [0u8; 1024];
+
+        {
+            let mut stream = mock_server.accept().unwrap().0;
+
+            stream.read(&mut request_bytes).unwrap();
+            stream.write("HTTP/1.1 200 OK\n\n".as_bytes()).unwrap();
+        }
+
+        h.join().unwrap();
+
+        assert!(
+            request_bytes
+                .windows(bytes_len)
+                .any(|window| window == &tx_bytes[..bytes_len]),
+            "Request bytes did not contain the transaction bytes"
+        );
     }
 }
