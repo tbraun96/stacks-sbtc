@@ -1,20 +1,75 @@
-
 [project]
-name = "sbtc-mini"
+name = 'sbtc-mini'
+description = ''
 authors = []
 telemetry = false
-[repl.analysis]
-passes = ["check_checker"]
-[repl.analysis.check_checker]
-# If true, inputs are trusted after tx_sender has been checked.
-trusted_sender = false
-# If true, inputs are trusted after contract-caller has been checked.
-trusted_caller = false
-# If true, untrusted data may be passed into a private function without a
-# warning, if it gets checked inside. This check will also propagate up to the
-# caller.
-callee_filter = false
+cache_dir = './.cache'
 
-# [contracts.counter]
-# path = "contracts/counter.clar"
-# depends_on = []
+[[project.requirements]]
+contract_id = 'ST000000000000000000002AMW42H.pox-2'
+
+[[project.requirements]]
+contract_id = 'SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard'
+[contracts.clarity-bitcoin]
+path = 'contracts/clarity-bitcoin.clar'
+clarity_version = 2
+epoch = 2.1
+
+[contracts.sbtc-btc-tx-helper]
+path = 'contracts/sbtc-btc-tx-helper.clar'
+clarity_version = 2
+epoch = 2.1
+
+[contracts.sbtc-controller]
+path = 'contracts/sbtc-controller.clar'
+clarity_version = 2
+epoch = 2.1
+
+[contracts.sbtc-peg-in-processor]
+path = 'contracts/sbtc-peg-in-processor.clar'
+clarity_version = 2
+epoch = 2.1
+
+[contracts.sbtc-peg-out-processor]
+path = 'contracts/sbtc-peg-out-processor.clar'
+clarity_version = 2
+epoch = 2.1
+
+[contracts.sbtc-registry]
+path = 'contracts/sbtc-registry.clar'
+clarity_version = 2
+epoch = 2.1
+
+[contracts.sbtc-stacking-pool]
+path = 'contracts/sbtc-stacking-pool.clar'
+clarity_version = 2
+epoch = 2.1
+
+[contracts.sbtc-testnet-debug-controller]
+path = 'contracts/sbtc-testnet-debug-controller.clar'
+clarity_version = 2
+epoch = 2.1
+
+[contracts.sbtc-token]
+path = 'contracts/sbtc-token.clar'
+clarity_version = 2
+epoch = 2.1
+
+[contracts.sbtc-wallet-vote]
+path = 'contracts/sbtc-wallet-vote.clar'
+clarity_version = 2
+epoch = 2.1
+
+[contracts.sbtc-controller_test]
+path = 'tests/sbtc-controller_test.clar'
+clarity_version = 2
+epoch = 2.1
+
+[repl.analysis]
+passes = ['check_checker']
+
+[repl.analysis.check_checker]
+strict = false
+trusted_sender = false
+trusted_caller = false
+callee_filter = false
