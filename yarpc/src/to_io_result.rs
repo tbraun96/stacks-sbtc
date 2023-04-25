@@ -9,7 +9,7 @@ fn error<E: Into<Box<dyn std::error::Error + Send + Sync>>>(e: E) -> Error {
     Error::new(ErrorKind::InvalidData, e)
 }
 
-fn err<T, E: Into<Box<dyn std::error::Error + Send + Sync>>>(e: E) -> Result<T, Error> {
+pub fn err<T, E: Into<Box<dyn std::error::Error + Send + Sync>>>(e: E) -> Result<T, Error> {
     Err(error(e))
 }
 
