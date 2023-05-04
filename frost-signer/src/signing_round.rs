@@ -126,8 +126,6 @@ pub enum MessageTypes {
     DkgPrivateBegin(DkgBegin),
     DkgEnd(DkgEnd),
     DkgPublicEnd(DkgEnd),
-    DkgQuery(DkgQuery),
-    DkgQueryResponse(DkgQueryResponse),
     DkgPublicShare(DkgPublicShare),
     DkgPrivateShares(DkgPrivateShares),
     NonceRequest(NonceRequest),
@@ -190,7 +188,7 @@ impl Signable for DkgBegin {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct DkgEnd {
     pub dkg_id: u64,
-    pub signer_id: usize,
+    pub signer_id: u32,
     pub status: DkgStatus,
 }
 
@@ -199,32 +197,6 @@ impl Signable for DkgEnd {
         hasher.update("DKG_END".as_bytes());
         hasher.update(self.dkg_id.to_be_bytes());
         hasher.update(self.signer_id.to_be_bytes());
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct DkgQuery {}
-
-impl Signable for DkgQuery {
-    fn hash(&self, hasher: &mut Sha256) {
-        hasher.update("DKG_QUERY".as_bytes());
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct DkgQueryResponse {
-    pub dkg_id: u64,
-    pub public_share: PolyCommitment,
-}
-
-impl Signable for DkgQueryResponse {
-    fn hash(&self, hasher: &mut Sha256) {
-        hasher.update("DKG_QUERY_RESPONSE".as_bytes());
-        hasher.update(self.dkg_id.to_be_bytes());
-        hasher.update(self.public_share.id.id.to_bytes());
-        for a in &self.public_share.A {
-            hasher.update(a.compress().as_bytes());
-        }
     }
 }
 
@@ -337,8 +309,8 @@ impl SigningRound {
         };
 
         SigningRound {
-            dkg_id: 1,
-            dkg_public_id: 1,
+            dkg_id: 0,
+            dkg_public_id: 0,
             sign_id: 1,
             sign_nonce_id: 1,
             threshold,
@@ -353,7 +325,7 @@ impl SigningRound {
 
     fn reset<T: RngCore + CryptoRng>(&mut self, dkg_id: u64, rng: &mut T) {
         self.dkg_id = dkg_id;
-        self.dkg_public_id = 1;
+        self.dkg_public_id = 0;
         self.commitments.clear();
         self.shares.clear();
         self.public_nonces.clear();
@@ -406,7 +378,7 @@ impl SigningRound {
     fn dkg_public_ended(&mut self) -> Result<MessageTypes, Error> {
         let dkg_end = DkgEnd {
             dkg_id: self.dkg_id,
-            signer_id: self.signer.signer_id as usize,
+            signer_id: self.signer.signer_id,
             status: DkgStatus::Success,
         };
         let dkg_end = MessageTypes::DkgPublicEnd(dkg_end);
@@ -427,12 +399,12 @@ impl SigningRound {
         {
             Ok(()) => DkgEnd {
                 dkg_id: self.dkg_id,
-                signer_id: self.signer.signer_id as usize,
+                signer_id: self.signer.signer_id,
                 status: DkgStatus::Success,
             },
             Err(dkg_error_map) => DkgEnd {
                 dkg_id: self.dkg_id,
-                signer_id: self.signer.signer_id as usize,
+                signer_id: self.signer.signer_id,
                 status: DkgStatus::Failure(format!("{:?}", dkg_error_map)),
             },
         };
@@ -525,11 +497,11 @@ impl SigningRound {
                             .collect::<Vec<usize>>()
                     })
                     .collect::<Vec<usize>>();
-                let nonces: Vec<PublicNonce> = sign_request
+                let nonces = sign_request
                     .nonce_responses
                     .iter()
                     .flat_map(|nr| nr.nonces.clone())
-                    .collect();
+                    .collect::<Vec<PublicNonce>>();
                 let signature_shares = self.signer.frost_signer.sign(
                     &sign_request.message,
                     &signer_ids,
@@ -624,7 +596,7 @@ impl SigningRound {
         self.commitments
             .insert(dkg_public_share.party_id, dkg_public_share.public_share);
         info!(
-            "received party #{} PUBLIC commitments {}/{}",
+            "received key #{} PUBLIC commitments {}/{}",
             dkg_public_share.party_id,
             self.commitments.len(),
             self.total
@@ -642,7 +614,7 @@ impl SigningRound {
             dkg_private_shares.private_shares,
         );
         info!(
-            "received party #{} PRIVATE shares {}/{} {:?}",
+            "received key #{} PRIVATE shares {}/{} {:?}",
             dkg_private_shares.key_id,
             self.shares.len(),
             self.total,
@@ -655,8 +627,11 @@ impl SigningRound {
 impl From<&FrostSigner> for SigningRound {
     fn from(signer: &FrostSigner) -> Self {
         let signer_id = signer.signer_id;
-        assert!(signer_id > 0 && signer_id as usize <= signer.config.total_signers);
-        let party_ids = vec![(signer_id * 2 - 2) as usize, (signer_id * 2 - 1) as usize]; // make two party_ids based on signer_id
+        assert!(signer_id > 0 && signer_id <= signer.config.total_signers);
+        let party_ids = vec![
+            (signer_id * 2 - 2).try_into().unwrap(),
+            (signer_id * 2 - 1).try_into().unwrap(),
+        ]; // make two party_ids based on signer_id
 
         assert!(signer.config.keys_threshold <= signer.config.total_keys);
         let mut rng = OsRng::default();
