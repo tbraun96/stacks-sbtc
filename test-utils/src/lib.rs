@@ -23,7 +23,8 @@ use ureq::serde_json::Value;
 use ureq::{self, json, post};
 
 const BITCOIND_URL: &str = "http://abcd:abcd@localhost";
-const MAX_PORT: u16 = 28443;
+const MIN_PORT: u16 = 20000;
+const MAX_PORT: u16 = 25000;
 
 pub struct BitcoinProcess {
     url: Url,
@@ -35,6 +36,7 @@ impl BitcoinProcess {
     fn spawn(port: u16, datadir: &Path) -> Child {
         let bitcoind_child = Command::new("bitcoind")
             .arg("-regtest")
+            .arg("-bind=0.0.0.0:0")
             .arg("-rpcuser=abcd")
             .arg("-rpcpassword=abcd")
             .arg(format!("-rpcport={}", port))
@@ -44,7 +46,9 @@ impl BitcoinProcess {
             .expect("bitcoind failed to start");
 
         let bitcoind_pid = bitcoind_child.id() as pid_t;
-        ctrlc::set_handler(move || {
+
+        // Attempt to set a ctrlc handler if it hasn't been set yet
+        let _ = ctrlc::set_handler(move || {
             println!("Killing bitcoind pid {:?}...", bitcoind_pid);
 
             signal::kill(Pid::from_raw(bitcoind_pid), Signal::SIGTERM)
@@ -55,8 +59,7 @@ impl BitcoinProcess {
                     )
                 })
                 .unwrap();
-        })
-        .expect("Error setting Ctrl-C handler");
+        });
 
         bitcoind_child
     }
@@ -101,19 +104,19 @@ impl BitcoinProcess {
         Err("connection timeout".to_string())
     }
 
-    fn port_is_available(port: u16) -> bool {
-        TcpListener::bind(("127.0.0.1", port)).is_ok()
+    fn port_is_available(port: u16) -> Option<TcpListener> {
+        TcpListener::bind(("127.0.0.1", port)).ok()
     }
 
     fn find_port() -> Option<u16> {
-        (18443..MAX_PORT).find(|port| {
-            // Double check that the port is available as checking it once leads to race conditions
-            if Self::port_is_available(*port) {
-                sleep(Duration::from_millis(100));
-                Self::port_is_available(*port)
-            } else {
-                false
-            }
+        (MIN_PORT..=MAX_PORT).find(|port| {
+            // Keep the port bound for a short amount of time so other tests can pick different ones
+            Self::port_is_available(*port)
+                .map(|_listener| {
+                    sleep(Duration::from_millis(100));
+                    true
+                })
+                .unwrap_or_default()
         })
     }
 

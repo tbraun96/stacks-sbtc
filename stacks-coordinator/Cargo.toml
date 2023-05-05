@@ -32,3 +32,4 @@ ureq.workspace = true
 mockall = { workspace = true }
 rand = "0.8.5"
 hex = "0.4.3"
+test-utils = { path = "../test-utils" }
