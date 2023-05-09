@@ -6,7 +6,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread::spawn;
 use std::{thread, time};
-use tracing::warn;
+use tracing::{debug, warn};
 
 // on-disk format for frost save data
 #[derive(Clone)]
@@ -150,8 +150,8 @@ fn verify_msg(
         }
         MessageTypes::DkgEnd(msg) | MessageTypes::DkgPublicEnd(msg) => {
             if let Some(public_key) = signer_keys.signers.get(&msg.signer_id) {
-                println!("HERE WE GO");
-                println!("{:?}", public_key.to_bytes());
+                debug!("HERE WE GO");
+                debug!("{:?}", public_key.to_bytes());
 
                 if !msg.verify(&m.sig, public_key) {
                     warn!("Received a DkgPublicEnd message with an invalid signature.");

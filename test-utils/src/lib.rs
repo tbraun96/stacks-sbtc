@@ -3,6 +3,7 @@ use bitcoin::util::sighash::SighashCache;
 use bitcoin::{
     Address, EcdsaSighashType, Network, PrivateKey, PublicKey, Transaction, TxOut, Txid,
 };
+use hashbrown::HashMap;
 use libc::pid_t;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
@@ -25,6 +26,67 @@ use ureq::{self, json, post};
 const BITCOIND_URL: &str = "http://abcd:abcd@localhost";
 const MIN_PORT: u16 = 20000;
 const MAX_PORT: u16 = 25000;
+
+pub struct Process {
+    pub datadir: PathBuf,
+    pub child: Child,
+}
+
+impl Process {
+    pub fn new(cmd: &str, args: &[&str], envs: &HashMap<String, String>) -> Self {
+        let mut datadir: PathBuf = PathBuf::from_str("/tmp/").unwrap();
+        let tempfile: String = "test_utils_"
+            .chars()
+            .chain(
+                rand::thread_rng()
+                    .sample_iter(&Alphanumeric)
+                    .take(16)
+                    .map(char::from),
+            )
+            .collect();
+
+        datadir = datadir.join(tempfile);
+        create_dir(&datadir).unwrap();
+
+        let child = Self::spawn(cmd, args, envs);
+
+        Process { datadir, child }
+    }
+
+    fn spawn(cmd: &str, args: &[&str], envs: &HashMap<String, String>) -> Child {
+        let child = Command::new(cmd)
+            .envs(envs)
+            .args(args)
+            .stdout(Stdio::inherit())
+            .spawn()
+            .unwrap_or_else(|_| panic!("{} failed to start", cmd));
+
+        let pid = child.id() as pid_t;
+
+        // Attempt to set a ctrlc handler if it hasn't been set yet
+        let _ = ctrlc::set_handler(move || {
+            println!("Killing pid {:?}...", pid);
+
+            signal::kill(Pid::from_raw(pid), Signal::SIGTERM)
+                .map_err(|e| println!("Warning: signaling pid {} failed {:?}", pid, e))
+                .unwrap();
+        });
+
+        child
+    }
+}
+
+impl Drop for Process {
+    fn drop(&mut self) {
+        match self.child.kill() {
+            Ok(_) => (),
+            Err(e) => {
+                println!("Failed to kill pid {}: {:?}", self.child.id(), e);
+            }
+        }
+        remove_dir_all(&self.datadir).unwrap();
+    }
+}
 
 pub struct BitcoinProcess {
     url: Url,

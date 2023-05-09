@@ -465,3 +465,50 @@ where
         backoff::retry_notify(backoff_timer, get_next_message, notify).map_err(|_| Error::Timeout)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use hashbrown::HashMap;
+    use test_utils::Process;
+
+    #[test]
+    fn integration_test() {
+        let bin = if cfg!(debug_assertions) {
+            "../target/debug"
+        } else {
+            "../target/release"
+        };
+
+        let log_info: HashMap<String, String> =
+            HashMap::from([("RUST_LOG".to_string(), "info".to_string())]);
+
+        let _relay_server = Process::new(&format!("{bin}/relay-server"), &[], &HashMap::new());
+        let _signer1 = Process::new(
+            &format!("{bin}/frost-signer"),
+            &["--id", "1", "--config", "../frost-signer/conf/signer.toml"],
+            &HashMap::new(),
+        );
+        let _signer2 = Process::new(
+            &format!("{bin}/frost-signer"),
+            &["--id", "2", "--config", "../frost-signer/conf/signer.toml"],
+            &HashMap::new(),
+        );
+        let _signer3 = Process::new(
+            &format!("{bin}/frost-signer"),
+            &["--id", "3", "--config", "../frost-signer/conf/signer.toml"],
+            &HashMap::new(),
+        );
+        let mut coordinator = Process::new(
+            &format!("{bin}/frost-coordinator"),
+            &["--config", "../frost-signer/conf/signer.toml", "dkg-sign"],
+            &log_info,
+        );
+
+        let exit_status = coordinator
+            .child
+            .wait()
+            .expect("Failed to wait for coordinator");
+
+        assert!(exit_status.success());
+    }
+}
