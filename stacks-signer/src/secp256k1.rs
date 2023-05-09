@@ -2,7 +2,7 @@ use clap::Args;
 use rand_core::OsRng;
 use std::{fs::File, io::prelude::*, path::PathBuf};
 use tracing::info;
-use wtfrost::Scalar;
+use wsts::Scalar;
 
 #[derive(Args)]
 pub struct Secp256k1 {

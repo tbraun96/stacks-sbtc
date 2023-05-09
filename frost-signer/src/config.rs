@@ -4,7 +4,7 @@ use p256k1::ecdsa;
 use serde::Deserialize;
 use std::fs;
 use toml;
-use wtfrost::Scalar;
+use wsts::Scalar;
 
 use crate::util::parse_public_key;
 
@@ -51,7 +51,7 @@ struct RawSignerKeys {
 #[derive(Clone, Deserialize, Default, Debug)]
 pub struct RawConfig {
     pub http_relay_url: String,
-    pub keys_threshold: usize,
+    pub keys_threshold: u32,
     pub frost_state_file: String,
     pub network_private_key: String,
     signers: Vec<RawSignerKeys>,
@@ -117,13 +117,13 @@ pub struct SignerKeys {
 #[derive(Clone)]
 pub struct Config {
     pub http_relay_url: String,
-    pub keys_threshold: usize,
+    pub keys_threshold: u32,
     pub frost_state_file: String,
     pub network_private_key: Scalar,
     pub signer_keys: SignerKeys,
     pub coordinator_public_key: ecdsa::PublicKey,
     pub total_signers: u32,
-    pub total_keys: usize,
+    pub total_keys: u32,
 }
 
 impl Config {
@@ -131,7 +131,7 @@ impl Config {
         let raw_config = RawConfig::from_path(path)?;
         let signer_keys = raw_config.signer_keys()?;
         let total_signers = signer_keys.signers.len().try_into().unwrap();
-        let total_keys = signer_keys.key_ids.len();
+        let total_keys = signer_keys.key_ids.len().try_into().unwrap();
         let coordinator_public_key = raw_config.coordinator_public_key()?;
         let network_private_key = raw_config.network_private_key()?;
         Ok(Self {

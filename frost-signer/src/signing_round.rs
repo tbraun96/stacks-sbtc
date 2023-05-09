@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use tracing::{debug, info};
-pub use wtfrost;
-use wtfrost::{
+pub use wsts;
+use wsts::{
     common::{PolyCommitment, PublicNonce, SignatureShare},
     traits::Signer as SignerTrait,
     v1, Scalar,
@@ -66,17 +66,17 @@ pub struct SigningRound {
     pub dkg_public_id: u64,
     pub sign_id: u64,
     pub sign_nonce_id: u64,
-    pub threshold: usize,
-    pub total: usize,
+    pub threshold: u32,
+    pub total: u32,
     pub signer: Signer,
     pub state: States,
     pub commitments: BTreeMap<u32, PolyCommitment>,
-    pub shares: HashMap<usize, HashMap<usize, Scalar>>,
+    pub shares: HashMap<u32, HashMap<u32, Scalar>>,
     pub public_nonces: Vec<PublicNonce>,
 }
 
 pub struct Signer {
-    pub frost_signer: wtfrost::v1::Signer,
+    pub frost_signer: wsts::v1::Signer,
     pub signer_id: u32,
 }
 
@@ -158,7 +158,7 @@ impl Signable for DkgPublicShare {
 pub struct DkgPrivateShares {
     pub dkg_id: u64,
     pub key_id: u32,
-    pub private_shares: HashMap<usize, Scalar>,
+    pub private_shares: HashMap<u32, Scalar>,
 }
 
 impl Signable for DkgPrivateShares {
@@ -294,15 +294,10 @@ impl Signable for SignatureShareResponse {
 }
 
 impl SigningRound {
-    pub fn new(
-        threshold: usize,
-        total: usize,
-        signer_id: u32,
-        key_ids: Vec<usize>,
-    ) -> SigningRound {
+    pub fn new(threshold: u32, total: u32, signer_id: u32, key_ids: Vec<u32>) -> SigningRound {
         assert!(threshold <= total);
         let mut rng = OsRng::default();
-        let frost_signer = v1::Signer::new(&key_ids, total, threshold, &mut rng);
+        let frost_signer = v1::Signer::new(signer_id, &key_ids, total, threshold, &mut rng);
         let signer = Signer {
             frost_signer,
             signer_id,
@@ -423,7 +418,8 @@ impl SigningRound {
             self.state,
             self.commitments.len(),
         );
-        self.state == States::DkgPublicGather && self.commitments.len() == self.total
+        self.state == States::DkgPublicGather
+            && self.commitments.len() == usize::try_from(self.total).unwrap()
     }
 
     fn can_dkg_end(&self) -> bool {
@@ -434,21 +430,15 @@ impl SigningRound {
             self.shares.len()
         );
         self.state == States::DkgPrivateGather
-            && self.commitments.len() == self.total
-            && self.shares.len() == self.total
+            && self.commitments.len() == usize::try_from(self.total).unwrap()
+            && self.shares.len() == usize::try_from(self.total).unwrap()
     }
 
     fn nonce_request(&mut self, nonce_request: NonceRequest) -> Result<Vec<MessageTypes>, Error> {
         let mut rng = OsRng::default();
         let mut msgs = vec![];
         let signer_id = self.signer.signer_id;
-        let key_ids = self
-            .signer
-            .frost_signer
-            .get_key_ids()
-            .iter()
-            .map(|id| *id as u32)
-            .collect();
+        let key_ids = self.signer.frost_signer.get_key_ids();
         let nonces = self.signer.frost_signer.gen_nonces(&mut rng);
 
         let response = NonceResponse {
@@ -480,23 +470,18 @@ impl SigningRound {
         let signer_ids = sign_request
             .nonce_responses
             .iter()
-            .map(|nr| nr.signer_id as usize)
-            .collect::<Vec<usize>>();
+            .map(|nr| nr.signer_id)
+            .collect::<Vec<u32>>();
 
         info!("Got SignatureShareRequest for signer_ids {:?}", signer_ids);
 
         for signer_id in &signer_ids {
-            if *signer_id == self.signer.signer_id as usize {
-                let key_ids: Vec<usize> = sign_request
+            if *signer_id == self.signer.signer_id {
+                let key_ids: Vec<u32> = sign_request
                     .nonce_responses
                     .iter()
-                    .flat_map(|nr| {
-                        nr.key_ids
-                            .iter()
-                            .map(|i| *i as usize)
-                            .collect::<Vec<usize>>()
-                    })
-                    .collect::<Vec<usize>>();
+                    .flat_map(|nr| nr.key_ids.iter().copied())
+                    .collect::<Vec<u32>>();
                 let nonces = sign_request
                     .nonce_responses
                     .iter()
@@ -513,7 +498,7 @@ impl SigningRound {
                     dkg_id: sign_request.dkg_id,
                     sign_id: sign_request.sign_id,
                     correlation_id: sign_request.correlation_id,
-                    signer_id: *signer_id as u32,
+                    signer_id: *signer_id,
                     signature_shares,
                 };
 
@@ -577,7 +562,7 @@ impl SigningRound {
             info!("sending dkg private share for key_id #{}", key_id);
             let private_shares = DkgPrivateShares {
                 dkg_id: self.dkg_id,
-                key_id: *key_id as u32,
+                key_id: *key_id,
                 private_shares: private_shares.clone(),
             };
 
@@ -609,10 +594,8 @@ impl SigningRound {
         dkg_private_shares: DkgPrivateShares,
     ) -> Result<Vec<MessageTypes>, Error> {
         let shares_clone = dkg_private_shares.private_shares.clone();
-        self.shares.insert(
-            dkg_private_shares.key_id as usize,
-            dkg_private_shares.private_shares,
-        );
+        self.shares
+            .insert(dkg_private_shares.key_id, dkg_private_shares.private_shares);
         info!(
             "received key #{} PRIVATE shares {}/{} {:?}",
             dkg_private_shares.key_id,
@@ -628,14 +611,12 @@ impl From<&FrostSigner> for SigningRound {
     fn from(signer: &FrostSigner) -> Self {
         let signer_id = signer.signer_id;
         assert!(signer_id > 0 && signer_id <= signer.config.total_signers);
-        let party_ids = vec![
-            (signer_id * 2 - 2).try_into().unwrap(),
-            (signer_id * 2 - 1).try_into().unwrap(),
-        ]; // make two party_ids based on signer_id
+        let party_ids = vec![signer_id * 2 - 2, signer_id * 2 - 1]; // make two party_ids based on signer_id
 
         assert!(signer.config.keys_threshold <= signer.config.total_keys);
         let mut rng = OsRng::default();
         let frost_signer = v1::Signer::new(
+            signer_id,
             &party_ids,
             signer.config.total_keys,
             signer.config.keys_threshold,
@@ -665,7 +646,7 @@ impl From<&FrostSigner> for SigningRound {
 mod test {
     use hashbrown::HashMap;
     use rand_core::{CryptoRng, OsRng, RngCore};
-    use wtfrost::{common::PolyCommitment, schnorr::ID, Scalar};
+    use wsts::{common::PolyCommitment, schnorr::ID, Scalar};
 
     use crate::signing_round::{
         DkgPrivateShares, DkgPublicShare, DkgStatus, MessageTypes, SigningRound,
@@ -745,7 +726,7 @@ mod test {
                 A: vec![],
             },
         );
-        let shares: HashMap<usize, Scalar> = HashMap::new();
+        let shares: HashMap<u32, Scalar> = HashMap::new();
         signing_round.shares.insert(1, shares);
 
         // can_dkg_end should be true

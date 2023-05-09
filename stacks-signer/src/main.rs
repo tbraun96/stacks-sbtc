@@ -4,7 +4,7 @@ use frost_signer::logging;
 use stacks_signer::cli::{Cli, Command};
 use stacks_signer::signer::Signer;
 use tracing::info;
-use wtfrost::Point;
+use wsts::Point;
 
 fn main() {
     let cli = Cli::parse();

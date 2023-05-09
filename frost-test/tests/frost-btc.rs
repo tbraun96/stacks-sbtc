@@ -8,8 +8,8 @@ use bitcoin::{
 };
 use rand_core::OsRng;
 use test_utils::{mine_and_get_coinbase_txid, BitcoinProcess};
-use wtfrost::common::PolyCommitment;
-use wtfrost::{
+use wsts::common::PolyCommitment;
+use wsts::{
     bip340::{
         test_helpers::{dkg, sign},
         Error as Bip340Error, SchnorrProof,
@@ -117,9 +117,9 @@ fn frost_btc() {
     let total = 4;
     let mut rng = OsRng::default();
     let mut signers = [
-        v1::Signer::new(&[0, 1], total, threshold, &mut rng),
-        v1::Signer::new(&[2], total, threshold, &mut rng),
-        v1::Signer::new(&[3], total, threshold, &mut rng),
+        v1::Signer::new(1, &[0, 1], total, threshold, &mut rng),
+        v1::Signer::new(2, &[2], total, threshold, &mut rng),
+        v1::Signer::new(3, &[3], total, threshold, &mut rng),
     ];
     let secp = bitcoin::secp256k1::Secp256k1::new();
 
@@ -366,8 +366,8 @@ fn build_peg_out(satoshis: u64, user_address: bitcoin::PublicKey, utxo: OutPoint
 
 fn signing_round(
     message: &[u8],
-    threshold: usize,
-    total: usize,
+    threshold: u32,
+    total: u32,
     rng: &mut OsRng,
     signers: &mut [v1::Signer; 3],
     public_commitments: Vec<PolyCommitment>,
@@ -385,10 +385,7 @@ fn signing_round(
     SchnorrProof::new(&sig)
 }
 
-fn dkg_round(
-    rng: &mut OsRng,
-    signers: &mut [v1::Signer; 3],
-) -> (Vec<PolyCommitment>, wtfrost::Point) {
+fn dkg_round(rng: &mut OsRng, signers: &mut [v1::Signer; 3]) -> (Vec<PolyCommitment>, wsts::Point) {
     let polys = dkg(signers, rng).unwrap();
     let pubkey = polys.iter().fold(Point::new(), |s, poly| s + poly.A[0]);
     (polys, pubkey)

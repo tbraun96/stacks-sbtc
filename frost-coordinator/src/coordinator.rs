@@ -12,7 +12,7 @@ use frost_signer::{
 };
 use hashbrown::HashSet;
 use tracing::{debug, info, warn};
-use wtfrost::{
+use wsts::{
     bip340::{Error as Bip340Error, SchnorrProof},
     common::{PolyCommitment, PublicNonce, Signature, SignatureShare},
     compute,
@@ -20,7 +20,7 @@ use wtfrost::{
     v1, Point, Scalar,
 };
 
-pub const DEVNET_COORDINATOR_ID: usize = 0;
+pub const DEVNET_COORDINATOR_ID: u32 = 0;
 pub const DEVNET_COORDINATOR_DKG_ID: u64 = 0; //TODO: Remove, this is a correlation id
 
 #[derive(thiserror::Error, Debug)]
@@ -58,8 +58,8 @@ pub struct Coordinator<Network: NetListen> {
     current_sign_id: u64,
     current_sign_nonce_id: u64,
     total_signers: u32, // Assuming the signers cover all id:s in {1, 2, ..., total_signers}
-    total_keys: usize,
-    threshold: usize,
+    total_keys: u32,
+    threshold: u32,
     network: Network,
     dkg_public_shares: BTreeMap<u32, DkgPublicShare>,
     public_nonces: BTreeMap<u32, NonceResponse>,
@@ -217,13 +217,8 @@ where
         let party_ids = self
             .public_nonces
             .values()
-            .flat_map(|pn| {
-                pn.key_ids
-                    .iter()
-                    .map(|id| *id as usize)
-                    .collect::<Vec<usize>>()
-            })
-            .collect::<Vec<usize>>();
+            .flat_map(|pn| pn.key_ids.clone())
+            .collect::<Vec<u32>>();
         let nonces = self
             .public_nonces
             .values()

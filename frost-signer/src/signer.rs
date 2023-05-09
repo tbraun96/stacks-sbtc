@@ -246,7 +246,7 @@ mod test {
     use hashbrown::HashMap;
     use p256k1::ecdsa::PublicKey;
     use rand_core::OsRng;
-    use wtfrost::{
+    use wsts::{
         common::{PolyCommitment, PublicNonce},
         schnorr::ID,
         Scalar,
