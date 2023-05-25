@@ -16,7 +16,7 @@ pub enum Error {
     Toml(#[from] toml::de::Error),
     #[error("Invalid Public Key: {0}")]
     InvalidPublicKey(String),
-    #[error("Invalid Private Key: {0}")]
+    #[error("Failed to parse network_private_key: {0}")]
     InvalidPrivateKey(String),
     #[error("Invalid Key ID. Must specify Key IDs greater than 0.")]
     InvalidKeyID,
@@ -49,7 +49,7 @@ struct RawSignerKeys {
 }
 
 #[derive(Clone, Deserialize, Default, Debug)]
-pub struct RawConfig {
+struct RawConfig {
     pub http_relay_url: String,
     pub keys_threshold: u32,
     pub frost_state_file: String,
@@ -97,13 +97,8 @@ impl RawConfig {
     }
 
     pub fn network_private_key(&self) -> Result<Scalar, Error> {
-        let network_private_key =
-            Scalar::try_from(self.network_private_key.as_str()).map_err(|_| {
-                Error::InvalidPrivateKey(format!(
-                    "Failed to parse network_private_key from config. {}",
-                    self.network_private_key.clone()
-                ))
-            })?;
+        let network_private_key = Scalar::try_from(self.network_private_key.as_str())
+            .map_err(|e| Error::InvalidPrivateKey(format!("{:?}", e)))?;
         Ok(network_private_key)
     }
 }
@@ -127,29 +122,71 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn new(
+        keys_threshold: u32,
+        coordinator_public_key: ecdsa::PublicKey,
+        signer_keys: SignerKeys,
+        network_private_key: Scalar,
+        frost_state_file: String,
+        http_relay_url: String,
+    ) -> Config {
+        Self {
+            keys_threshold,
+            coordinator_public_key,
+            network_private_key,
+            frost_state_file,
+            http_relay_url,
+            total_signers: signer_keys.signers.len().try_into().unwrap(),
+            total_keys: signer_keys.key_ids.len().try_into().unwrap(),
+            signer_keys,
+        }
+    }
+
     pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Config, Error> {
         let raw_config = RawConfig::from_path(path)?;
-        let signer_keys = raw_config.signer_keys()?;
-        let total_signers = signer_keys.signers.len().try_into().unwrap();
-        let total_keys = signer_keys.key_ids.len().try_into().unwrap();
-        let coordinator_public_key = raw_config.coordinator_public_key()?;
-        let network_private_key = raw_config.network_private_key()?;
-        Ok(Self {
-            http_relay_url: raw_config.http_relay_url,
-            keys_threshold: raw_config.keys_threshold,
-            frost_state_file: raw_config.frost_state_file,
-            network_private_key,
-            total_signers,
-            total_keys,
-            signer_keys,
-            coordinator_public_key,
-        })
+        Config::try_from(&raw_config)
+    }
+}
+
+impl TryFrom<&RawConfig> for Config {
+    type Error = Error;
+    fn try_from(raw_config: &RawConfig) -> Result<Self, Error> {
+        Ok(Config::new(
+            raw_config.keys_threshold,
+            raw_config.coordinator_public_key()?,
+            raw_config.signer_keys()?,
+            raw_config.network_private_key()?,
+            raw_config.frost_state_file.clone(),
+            raw_config.http_relay_url.clone(),
+        ))
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::{Error, RawConfig, RawSignerKeys};
+    use super::{Config, Error, RawConfig, RawSignerKeys};
+
+    #[test]
+    fn try_from_raw_config_test() {
+        let mut raw_config = RawConfig::default();
+
+        // Should fail with the default config (require valid private and public keys...)
+        assert!(matches!(
+            Config::try_from(&raw_config),
+            Err(Error::InvalidPublicKey(_))
+        ));
+
+        raw_config.coordinator_public_key =
+            "22Rm48xUdpuTuva5gz9S7yDaaw9f8sjMcPSTHYVzPLNcj".to_string();
+        assert!(matches!(
+            Config::try_from(&raw_config),
+            Err(Error::InvalidPrivateKey(_))
+        ));
+
+        raw_config.network_private_key = "9aSCCR6eirt1NAHwJtSz4HMwBHTyMo62SyPMvVDt5DQn".to_string();
+        assert!(Config::try_from(&raw_config).is_ok());
+    }
+
     #[test]
     fn coordinator_public_key_test() {
         let mut config = RawConfig::default();

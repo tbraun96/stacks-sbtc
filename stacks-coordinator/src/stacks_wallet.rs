@@ -1,26 +1,20 @@
 use crate::{
     peg_wallet::{Error as PegWalletError, StacksWallet as StacksWalletTrait},
     stacks_node::{PegInOp, PegOutRequestOp},
+    util::address_version,
 };
-use bitcoin::Address as BitcoinAddress;
+use bitcoin::secp256k1::PublicKey;
 use blockstack_lib::{
-    address::{
-        AddressHashMode, C32_ADDRESS_VERSION_MAINNET_SINGLESIG,
-        C32_ADDRESS_VERSION_TESTNET_SINGLESIG,
-    },
     chainstate::stacks::{
         StacksTransaction, StacksTransactionSigner, TransactionAnchorMode, TransactionAuth,
         TransactionContractCall, TransactionPayload, TransactionPostConditionMode,
         TransactionSpendingCondition, TransactionVersion,
     },
     core::{CHAIN_ID_MAINNET, CHAIN_ID_TESTNET},
-    types::{
-        chainstate::{StacksAddress, StacksPrivateKey, StacksPublicKey},
-        Address,
-    },
+    types::chainstate::{StacksAddress, StacksPrivateKey, StacksPublicKey},
     vm::{
         errors::RuntimeErrorType,
-        types::{ASCIIData, StacksAddressExtensions},
+        types::{ASCIIData, BuffData, SequenceData, StacksAddressExtensions},
         ClarityName, ContractName, Value,
     },
 };
@@ -45,55 +39,28 @@ pub struct StacksWallet {
     contract_address: StacksAddress,
     contract_name: ContractName,
     sender_key: StacksPrivateKey,
-    version: TransactionVersion,
     address: StacksAddress,
+    version: TransactionVersion,
     fee: u64,
 }
 
 impl StacksWallet {
     pub fn new(
-        contract: String,
-        sender_key: &str,
+        contract_name: ContractName,
+        contract_address: StacksAddress,
+        sender_key: StacksPrivateKey,
+        address: StacksAddress,
         version: TransactionVersion,
         fee: u64,
-    ) -> Result<Self, Error> {
-        let sender_key = StacksPrivateKey::from_hex(sender_key)
-            .map_err(|e| Error::ConfigError(e.to_string()))?;
-
-        let pk = StacksPublicKey::from_private(&sender_key);
-
-        let address = StacksAddress::from_public_keys(
-            address_version(&version),
-            &AddressHashMode::SerializeP2PKH,
-            1,
-            &vec![pk],
-        )
-        .ok_or(Error::ConfigError(
-            "Failed to generate stacks address from private key.".to_string(),
-        ))?;
-
-        let contract_info: Vec<&str> = contract.split('.').collect();
-        if contract_info.len() != 2 {
-            return Err(Error::ConfigError(
-                "Invalid sBTC contract. Expected a period seperated contract address and contract name."
-            .to_string()));
-        }
-        let contract_address = contract_info[0];
-        let contract_name = contract_info[1].to_owned();
-
-        let contract_address = StacksAddress::from_string(contract_address).ok_or(
-            Error::ConfigError("Invalid sBTC contract address.".to_string()),
-        )?;
-        let contract_name = ContractName::try_from(contract_name)
-            .map_err(|_| Error::ConfigError("Invalid sBTC contract name.".to_string()))?;
-        Ok(Self {
+    ) -> Self {
+        Self {
             contract_address,
             contract_name,
             sender_key,
-            version,
             address,
+            version,
             fee,
-        })
+        }
     }
 
     fn build_transaction_signed(
@@ -218,16 +185,16 @@ impl StacksWalletTrait for StacksWallet {
         Ok(tx)
     }
 
-    fn build_set_btc_address_transaction(
+    fn build_set_bitcoin_wallet_public_key_transaction(
         &self,
-        address: &BitcoinAddress,
+        public_key: &PublicKey,
         nonce: u64,
     ) -> Result<StacksTransaction, PegWalletError> {
-        let function_name = "set-bitcoin-wallet-address";
+        let function_name = "set-bitcoin-wallet-public-key";
         // Build the function arguments
-        let address = Value::from(ASCIIData {
-            data: address.to_string().into_bytes(),
-        });
+        let address = Value::Sequence(SequenceData::Buffer(BuffData {
+            data: public_key.to_string().into_bytes(),
+        }));
         let function_args = vec![address];
         let tx = self.build_transaction_signed(function_name, function_args, nonce)?;
         Ok(tx)
@@ -238,31 +205,32 @@ impl StacksWalletTrait for StacksWallet {
     }
 }
 
-fn address_version(version: &TransactionVersion) -> u8 {
-    match version {
-        TransactionVersion::Mainnet => C32_ADDRESS_VERSION_MAINNET_SINGLESIG,
-        TransactionVersion::Testnet => C32_ADDRESS_VERSION_TESTNET_SINGLESIG,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::{
         peg_wallet::StacksWallet as StacksWalletTrait,
         stacks_wallet::StacksWallet,
-        util::test::{build_peg_out_request_op, PRIVATE_KEY_HEX, PUBLIC_KEY_HEX},
+        util::{
+            address_version,
+            test::{build_peg_out_request_op, PRIVATE_KEY_HEX, PUBLIC_KEY_HEX},
+        },
     };
-    use bitcoin::{secp256k1::Secp256k1, XOnlyPublicKey};
+    use bitcoin::{secp256k1::Parity, XOnlyPublicKey};
     use blockstack_lib::{
-        address::C32_ADDRESS_VERSION_TESTNET_SINGLESIG,
-        burnchains::Txid,
+        address::{AddressHashMode, C32_ADDRESS_VERSION_TESTNET_SINGLESIG},
+        burnchains::{Address, Txid},
         chainstate::{
             burn::operations::{PegInOp, PegOutRequestOp},
             stacks::{address::PoxAddress, TransactionVersion},
         },
-        types::chainstate::{BurnchainHeaderHash, StacksAddress},
+        types::chainstate::{
+            BurnchainHeaderHash, StacksAddress, StacksPrivateKey, StacksPublicKey,
+        },
         util::{hash::Hash160, secp256k1::MessageSignature},
-        vm::types::{PrincipalData, StandardPrincipalData},
+        vm::{
+            types::{PrincipalData, StandardPrincipalData},
+            ContractName,
+        },
     };
     use rand::Rng;
     use std::str::FromStr;
@@ -278,13 +246,31 @@ mod tests {
     }
 
     fn stacks_wallet() -> StacksWallet {
+        let sender_key =
+            StacksPrivateKey::from_hex(PRIVATE_KEY_HEX).expect("Failed to parse private key");
+
+        let pk = StacksPublicKey::from_private(&sender_key);
+
+        let address = StacksAddress::from_public_keys(
+            address_version(&TransactionVersion::Testnet),
+            &AddressHashMode::SerializeP2PKH,
+            1,
+            &vec![pk],
+        )
+        .expect("Failed to create stacks address");
+        let contract_name = ContractName::from("sbtc-alpha");
+
+        let contract_address =
+            StacksAddress::from_string("SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE")
+                .expect("Failed to parse contract address");
         StacksWallet::new(
-            "SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sbtc-alpha".to_string(),
-            PRIVATE_KEY_HEX,
+            contract_name,
+            contract_address,
+            sender_key,
+            address,
             TransactionVersion::Testnet,
             10,
         )
-        .expect("Failed to construct a stacks wallet for testing.")
     }
 
     #[test]
@@ -345,70 +331,16 @@ mod tests {
     }
 
     #[test]
-    fn build_set_btc_address_transaction_test() {
+    fn build_set_bitcoin_wallet_public_key_transaction_test() {
         let wallet = stacks_wallet();
         let internal_key = XOnlyPublicKey::from_str(PUBLIC_KEY_HEX).unwrap();
-        let secp = Secp256k1::verification_only();
-        let address = bitcoin::Address::p2tr(&secp, internal_key, None, bitcoin::Network::Testnet);
+        let public_key = internal_key.public_key(Parity::Even);
 
         let tx = wallet
-            .build_set_btc_address_transaction(&address, 0)
+            .build_set_bitcoin_wallet_public_key_transaction(&public_key, 0)
             .expect("Failed to construct a set btc address transaction.");
         tx.verify().expect(
             "build_set_btc_address_transaction generated a transaction with an invalid signature.",
-        );
-    }
-
-    #[test]
-    fn stacks_wallet_invalid_config_test() {
-        // Test an invalid key
-        assert_eq!(
-            StacksWallet::new(
-                "SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sbtc-alpha".to_string(),
-                "",
-                TransactionVersion::Testnet,
-                10
-            )
-            .err()
-            .unwrap()
-            .to_string(),
-            "Invalid private key hex string"
-        );
-        // Test an invalid contract
-        assert_eq!(
-            StacksWallet::new(
-                "SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTEsbtc-alpha".to_string(),
-                PRIVATE_KEY_HEX, TransactionVersion::Testnet, 10)
-                .err()
-                .unwrap()
-                .to_string(),
-                "Invalid sBTC contract. Expected a period seperated contract address and contract name."
-        );
-        // Test an invalid contract address
-        assert_eq!(
-            StacksWallet::new(
-                "SP3FBR2AGK5H9QBDH3EEN6DF8E.sbtc-alpha".to_string(),
-                PRIVATE_KEY_HEX,
-                TransactionVersion::Testnet,
-                10
-            )
-            .err()
-            .unwrap()
-            .to_string(),
-            "Invalid sBTC contract address."
-        );
-        // Test an invalid contract name
-        assert_eq!(
-            StacksWallet::new(
-                "SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.12".to_string(),
-                PRIVATE_KEY_HEX,
-                TransactionVersion::Testnet,
-                10
-            )
-            .err()
-            .unwrap()
-            .to_string(),
-            "Invalid sBTC contract name."
         );
     }
 }

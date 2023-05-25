@@ -14,11 +14,11 @@ fn main() {
     //TODO: get configs from sBTC contract
     match Config::from_path(&cli.config) {
         Ok(mut config) => {
-            config.signer_config_path = cli.signer_config;
+            config.signer_config_path = Some(cli.signer_config);
             if cli.start_block_height.is_some() {
                 config.start_block_height = cli.start_block_height;
             }
-            match StacksCoordinator::try_from(config) {
+            match StacksCoordinator::try_from(&config) {
                 Ok(mut coordinator) => {
                     // Determine what action the caller wishes to perform
                     match cli.command {

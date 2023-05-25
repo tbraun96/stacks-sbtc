@@ -82,6 +82,7 @@ impl BitcoinNode for LocalhostBitcoinNode {
     }
 
     fn load_wallet(&self, address: &BitcoinAddress) -> Result<(), Error> {
+        debug!("Loading bitcoin wallet...");
         let result = self.create_empty_wallet();
         if let Err(Error::RPCError(message)) = &result {
             if !message.ends_with("Database already exists.\"") {
@@ -97,6 +98,7 @@ impl BitcoinNode for LocalhostBitcoinNode {
 
     /// List the UTXOs filtered on a given address.
     fn list_unspent(&self, address: &BitcoinAddress) -> Result<Vec<UTXO>, Error> {
+        debug!("Retrieving utxos...");
         // Construct the params using defaults found at https://developer.bitcoin.org/reference/rpc/listunspent.html?highlight=listunspent
         let addresses: Vec<String> = vec![address.to_string()];
         let min_conf = 0i64;

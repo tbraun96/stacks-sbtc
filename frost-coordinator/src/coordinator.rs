@@ -20,9 +20,6 @@ use wsts::{
     v1, Point, Scalar,
 };
 
-pub const DEVNET_COORDINATOR_ID: u32 = 0;
-pub const DEVNET_COORDINATOR_DKG_ID: u64 = 0; //TODO: Remove, this is a correlation id
-
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("{0}")]
@@ -378,6 +375,10 @@ where
         } else {
             Ok(self.aggregate_public_key)
         }
+    }
+
+    pub fn set_aggregate_public_key(&mut self, public_key: Point) {
+        self.aggregate_public_key = public_key;
     }
 
     fn wait_for_public_shares(&mut self) -> Result<Point, Error> {
