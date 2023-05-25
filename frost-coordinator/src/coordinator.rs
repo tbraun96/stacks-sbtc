@@ -486,22 +486,26 @@ mod test {
         let _relay_server = Process::new(&format!("{bin}/relay-server"), &[], &HashMap::new());
         let _signer1 = Process::new(
             &format!("{bin}/frost-signer"),
-            &["--id", "1", "--config", "../frost-signer/conf/signer.toml"],
+            &["--id", "1", "--config", "../frost-signer/conf/signer1.toml"],
             &HashMap::new(),
         );
         let _signer2 = Process::new(
             &format!("{bin}/frost-signer"),
-            &["--id", "2", "--config", "../frost-signer/conf/signer.toml"],
+            &["--id", "2", "--config", "../frost-signer/conf/signer2.toml"],
             &HashMap::new(),
         );
         let _signer3 = Process::new(
             &format!("{bin}/frost-signer"),
-            &["--id", "3", "--config", "../frost-signer/conf/signer.toml"],
+            &["--id", "3", "--config", "../frost-signer/conf/signer3.toml"],
             &HashMap::new(),
         );
         let mut coordinator = Process::new(
             &format!("{bin}/frost-coordinator"),
-            &["--config", "../frost-signer/conf/signer.toml", "dkg-sign"],
+            &[
+                "--config",
+                "../frost-coordinator/conf/signer.toml",
+                "dkg-sign",
+            ],
             &log_info,
         );
 
