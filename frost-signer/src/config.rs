@@ -1,10 +1,12 @@
 use clap::Parser;
 use hashbrown::HashMap;
-use p256k1::ecdsa;
+use p256k1::{
+    ecdsa::{self, Error as ECDSAError},
+    scalar::{Error as ScalarError, Scalar},
+};
 use serde::Deserialize;
 use std::fs;
 use toml;
-use wsts::Scalar;
 
 use crate::util::parse_public_key;
 
@@ -15,9 +17,9 @@ pub enum Error {
     #[error("{0}")]
     Toml(#[from] toml::de::Error),
     #[error("Invalid Public Key: {0}")]
-    InvalidPublicKey(String),
+    InvalidPublicKey(ECDSAError),
     #[error("Failed to parse network_private_key: {0}")]
-    InvalidPrivateKey(String),
+    InvalidPrivateKey(ScalarError),
     #[error("Invalid Key ID. Must specify Key IDs greater than 0.")]
     InvalidKeyID,
 }
@@ -67,12 +69,8 @@ impl RawConfig {
     pub fn signer_keys(&self) -> Result<SignerKeys, Error> {
         let mut signer_keys = SignerKeys::default();
         for (i, s) in self.signers.iter().enumerate() {
-            let signer_public_key = parse_public_key(&s.public_key).map_err(|_| {
-                Error::InvalidPublicKey(format!(
-                    "Failed to parse signers from config. {}",
-                    s.public_key
-                ))
-            })?;
+            let signer_public_key =
+                parse_public_key(&s.public_key).map_err(Error::InvalidPublicKey)?;
             for key_id in &s.key_ids {
                 //We do not allow a key id of 0.
                 if *key_id == 0 {
@@ -88,17 +86,12 @@ impl RawConfig {
     }
 
     pub fn coordinator_public_key(&self) -> Result<ecdsa::PublicKey, Error> {
-        parse_public_key(&self.coordinator_public_key).map_err(|_| {
-            Error::InvalidPublicKey(format!(
-                "Failed to parse coordinator_public_key from config. {}",
-                self.coordinator_public_key
-            ))
-        })
+        parse_public_key(&self.coordinator_public_key).map_err(Error::InvalidPublicKey)
     }
 
     pub fn network_private_key(&self) -> Result<Scalar, Error> {
         let network_private_key = Scalar::try_from(self.network_private_key.as_str())
-            .map_err(|e| Error::InvalidPrivateKey(format!("{:?}", e)))?;
+            .map_err(Error::InvalidPrivateKey)?;
         Ok(network_private_key)
     }
 }
