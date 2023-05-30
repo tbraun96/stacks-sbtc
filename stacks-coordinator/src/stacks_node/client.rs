@@ -233,9 +233,8 @@ impl StacksNode for NodeClient {
         let json = response
             .json::<Value>()
             .map_err(|_| StacksNodeError::BehindChainTip)?;
-        json[entry]
-            .as_u64()
-            .map(|nonce| nonce + 1)
+        json.get(entry)
+            .and_then(|nonce| nonce.as_u64())
             .ok_or_else(|| StacksNodeError::InvalidJsonEntry(entry.to_string()))
     }
 
@@ -556,7 +555,7 @@ mod tests {
                     b"HTTP/1.1 200 OK\n\n{\"balance\":\"0x00000000000000000000000000000000\",\"locked\":\"0x00000000000000000000000000000000\",\"unlock_height\":0,\"nonce\":20,\"balance_proof\":\"\",\"nonce_proof\":\"\"}"
                 );
         let result = h.join().unwrap().unwrap();
-        assert_eq!(result, 21);
+        assert_eq!(result, 20);
     }
 
     #[test]
