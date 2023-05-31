@@ -193,7 +193,7 @@ impl StacksWalletTrait for StacksWallet {
         let function_name = "set-bitcoin-wallet-public-key";
         // Build the function arguments
         let address = Value::Sequence(SequenceData::Buffer(BuffData {
-            data: public_key.to_string().into_bytes(),
+            data: public_key.serialize().to_vec(),
         }));
         let function_args = vec![address];
         let tx = self.build_transaction_signed(function_name, function_args, nonce)?;
