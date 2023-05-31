@@ -16,7 +16,7 @@ pub struct Cli {
 }
 
 fn main() {
-    logging::initiate_tracing_subscriber().unwrap();
+    logging::initiate_tracing_subscriber();
 
     let cli = Cli::parse();
     match create_coordinator_from_path(cli.config) {

@@ -8,8 +8,7 @@ use tracing::{error, info, warn};
 fn main() {
     let cli = Cli::parse();
 
-    // Initialize logging
-    logging::initiate_tracing_subscriber().unwrap();
+    logging::initiate_tracing_subscriber();
 
     //TODO: get configs from sBTC contract
     match Config::from_path(&cli.config) {
