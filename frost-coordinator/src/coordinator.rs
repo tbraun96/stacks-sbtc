@@ -11,6 +11,7 @@ use frost_signer::{
     },
 };
 use hashbrown::HashSet;
+use p256k1::ecdsa::PublicKey;
 use tracing::{debug, info, warn};
 use wsts::{
     bip340::{Error as Bip340Error, SchnorrProof},
@@ -63,6 +64,7 @@ pub struct Coordinator<Network: NetListen> {
     signature_shares: BTreeMap<u32, Vec<SignatureShare>>,
     aggregate_public_key: Point,
     network_private_key: Scalar,
+    public_key: PublicKey,
 }
 
 impl<Network: NetListen> Coordinator<Network> {
@@ -82,6 +84,7 @@ impl<Network: NetListen> Coordinator<Network> {
             aggregate_public_key: Point::default(),
             signature_shares: Default::default(),
             network_private_key: config.network_private_key,
+            public_key: config.coordinator_public_key,
         })
     }
 }
@@ -464,6 +467,10 @@ where
             .with_max_interval(Duration::from_millis(128))
             .build();
         backoff::retry_notify(backoff_timer, get_next_message, notify).map_err(|_| Error::Timeout)
+    }
+
+    pub fn public_key(&self) -> &PublicKey {
+        &self.public_key
     }
 }
 
