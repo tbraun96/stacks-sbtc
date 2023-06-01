@@ -95,6 +95,7 @@ pub trait Coordinator: Sized {
     fn frost_coordinator(&self) -> &FrostCoordinator;
     fn frost_coordinator_mut(&mut self) -> &mut FrostCoordinator;
     fn stacks_node(&self) -> &Self::StacksNode;
+    fn stacks_node_mut(&mut self) -> &mut Self::StacksNode;
     fn bitcoin_node(&self) -> &Self::BitcoinNode;
 
     // Provided methods
@@ -136,9 +137,8 @@ pub trait Coordinator: Sized {
 trait CoordinatorHelpers: Coordinator {
     fn peg_in(&mut self, op: stacks_node::PegInOp) -> Result<()> {
         // Retrieve the nonce from the stacks node using the sBTC wallet address
-        let nonce = self
-            .stacks_node()
-            .next_nonce(self.fee_wallet().stacks().address())?;
+        let address = *self.fee_wallet().stacks().address();
+        let nonce = self.stacks_node_mut().next_nonce(&address)?;
 
         // Build a mint transaction using the peg in op and calculated nonce
         let tx = self
@@ -153,9 +153,8 @@ trait CoordinatorHelpers: Coordinator {
 
     fn peg_out(&mut self, op: stacks_node::PegOutRequestOp) -> Result<()> {
         // Retrieve the nonce from the stacks node using the sBTC wallet address
-        let nonce = self
-            .stacks_node()
-            .next_nonce(self.fee_wallet().stacks().address())?;
+        let address = *self.fee_wallet().stacks().address();
+        let nonce = self.stacks_node_mut().next_nonce(&address)?;
 
         // Build a burn transaction using the peg out request op and calculated nonce
         let burn_tx = self
@@ -287,7 +286,7 @@ fn create_frost_coordinator(config: &Config, stacks_node: &NodeClient) -> Result
 
 fn bitcoin_public_key(
     frost_coordinator: &mut FrostCoordinator,
-    stacks_node: &NodeClient,
+    stacks_node: &mut NodeClient,
     stacks_wallet: &StacksWallet,
     address: &StacksAddress,
 ) -> Result<PublicKey> {
@@ -319,7 +318,7 @@ impl TryFrom<&Config> for StacksCoordinator {
     type Error = Error;
     fn try_from(config: &Config) -> Result<Self> {
         info!("Initializing stacks coordinator...");
-        let local_stacks_node = NodeClient::new(
+        let mut local_stacks_node = NodeClient::new(
             config.stacks_node_rpc_url.clone(),
             config.contract_name.clone(),
             config.contract_address,
@@ -333,12 +332,23 @@ impl TryFrom<&Config> for StacksCoordinator {
             config.stacks_version,
             config.transaction_fee,
         );
+
         let mut frost_coordinator = create_frost_coordinator(config, &local_stacks_node)?;
+
+        // First load the coordinator data into the sbtc contract
+        debug!("loading coordinator data into sBTC contract...");
+        let nonce = local_stacks_node.next_nonce(&config.stacks_address)?;
+        let coordinator_tx = stacks_wallet.build_set_coordinator_data_transaction(
+            stacks_wallet.address(),
+            stacks_wallet.public_key(),
+            nonce,
+        )?;
+        local_stacks_node.broadcast_transaction(&coordinator_tx)?;
 
         // Load the public key from either the frost_coordinator or the sBTC contract
         let xonly_pubkey = bitcoin_public_key(
             &mut frost_coordinator,
-            &local_stacks_node,
+            &mut local_stacks_node,
             &stacks_wallet,
             &config.stacks_address,
         )?;
@@ -399,6 +409,10 @@ impl Coordinator for StacksCoordinator {
 
     fn stacks_node(&self) -> &Self::StacksNode {
         &self.local_stacks_node
+    }
+
+    fn stacks_node_mut(&mut self) -> &mut Self::StacksNode {
+        &mut self.local_stacks_node
     }
 
     fn bitcoin_node(&self) -> &Self::BitcoinNode {

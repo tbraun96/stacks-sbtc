@@ -22,6 +22,7 @@ pub struct NodeClient {
     client: Client,
     contract_name: ContractName,
     contract_address: StacksAddress,
+    next_nonce: Option<u64>,
 }
 
 impl NodeClient {
@@ -35,6 +36,7 @@ impl NodeClient {
             client: Client::new(),
             contract_name,
             contract_address,
+            next_nonce: None,
         }
     }
 
@@ -221,8 +223,13 @@ impl StacksNode for NodeClient {
             .ok_or_else(|| StacksNodeError::InvalidJsonEntry(entry.to_string()))
     }
 
-    fn next_nonce(&self, address: &StacksAddress) -> Result<u64, StacksNodeError> {
+    fn next_nonce(&mut self, address: &StacksAddress) -> Result<u64, StacksNodeError> {
         debug!("Retrieving next nonce...");
+        if let Some(nonce) = self.next_nonce {
+            let next_nonce = nonce.wrapping_add(1);
+            self.next_nonce = Some(next_nonce);
+            return Ok(next_nonce);
+        }
         let address = address.to_string();
         let entry = "nonce";
         let route = format!("/v2/accounts/{}", address);
@@ -233,13 +240,17 @@ impl StacksNode for NodeClient {
         let json = response
             .json::<Value>()
             .map_err(|_| StacksNodeError::BehindChainTip)?;
-        json.get(entry)
+        let nonce = json
+            .get(entry)
             .and_then(|nonce| nonce.as_u64())
-            .ok_or_else(|| StacksNodeError::InvalidJsonEntry(entry.to_string()))
+            .ok_or_else(|| StacksNodeError::InvalidJsonEntry(entry.to_string()))?;
+        self.next_nonce = Some(nonce);
+        Ok(nonce)
     }
 
     fn broadcast_transaction(&self, tx: &StacksTransaction) -> Result<(), StacksNodeError> {
         debug!("Broadcasting transaction...");
+        debug!("Transaction: {:?}", tx);
         let url = self.build_url("/v2/transactions");
         let mut buffer = vec![];
 
@@ -548,19 +559,24 @@ mod tests {
 
     #[test]
     fn next_nonce_success_test() {
-        let config = TestConfig::new();
+        let mut config = TestConfig::new();
 
-        let h = spawn(move || config.client.next_nonce(&config.sender));
+        let h = spawn(move || {
+            let nonce = config.client.next_nonce(&config.sender).unwrap();
+            let next_nonce = config.client.next_nonce(&config.sender).unwrap();
+            (nonce, next_nonce)
+        });
         write_response(config.mock_server,
                     b"HTTP/1.1 200 OK\n\n{\"balance\":\"0x00000000000000000000000000000000\",\"locked\":\"0x00000000000000000000000000000000\",\"unlock_height\":0,\"nonce\":20,\"balance_proof\":\"\",\"nonce_proof\":\"\"}"
                 );
-        let result = h.join().unwrap().unwrap();
-        assert_eq!(result, 20);
+        let (nonce, next_nonce) = h.join().unwrap();
+        assert_eq!(nonce, 20);
+        assert_eq!(next_nonce, 21);
     }
 
     #[test]
     fn next_nonce_failure_test() {
-        let config = TestConfig::new();
+        let mut config = TestConfig::new();
 
         let h = spawn(move || config.client.next_nonce(&config.sender));
         write_response(

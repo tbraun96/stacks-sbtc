@@ -14,7 +14,7 @@ use blockstack_lib::{
     types::chainstate::{StacksAddress, StacksPrivateKey, StacksPublicKey},
     vm::{
         errors::RuntimeErrorType,
-        types::{ASCIIData, BuffData, SequenceData, StacksAddressExtensions},
+        types::{ASCIIData, BuffData, SequenceData, StacksAddressExtensions, TupleData},
         ClarityName, ContractName, Value,
     },
 };
@@ -33,12 +33,16 @@ pub enum Error {
     ///Error occurred at Clarity runtime
     #[error("Clarity runtime error ocurred: {0}")]
     ClarityRuntimeError(#[from] RuntimeErrorType),
+    ///Blockstack error
+    #[error("Clarity runtime error ocurred: {0}")]
+    BlockstackError(#[from] blockstack_lib::vm::errors::Error),
 }
 
 pub struct StacksWallet {
     contract_address: StacksAddress,
     contract_name: ContractName,
     sender_key: StacksPrivateKey,
+    public_key: StacksPublicKey,
     address: StacksAddress,
     version: TransactionVersion,
     fee: u64,
@@ -53,10 +57,12 @@ impl StacksWallet {
         version: TransactionVersion,
         fee: u64,
     ) -> Self {
+        let public_key = StacksPublicKey::from_private(&sender_key);
         Self {
             contract_address,
             contract_name,
             sender_key,
+            public_key,
             address,
             version,
             fee,
@@ -95,8 +101,8 @@ impl StacksWallet {
         let payload = self.build_transaction_payload(function_name, function_args)?;
 
         // Next build the authorization from the provided sender key
-        let public_key = StacksPublicKey::from_private(&self.sender_key);
-        let mut spending_condition = TransactionSpendingCondition::new_singlesig_p2pkh(public_key)
+        let public_key = self.public_key();
+        let mut spending_condition = TransactionSpendingCondition::new_singlesig_p2pkh(*public_key)
             .ok_or_else(|| {
                 Error::SigningError(
                     "Failed to create transaction spending condition from provided sender_key."
@@ -192,16 +198,41 @@ impl StacksWalletTrait for StacksWallet {
     ) -> Result<StacksTransaction, PegWalletError> {
         let function_name = "set-bitcoin-wallet-public-key";
         // Build the function arguments
-        let address = Value::Sequence(SequenceData::Buffer(BuffData {
+        let key = Value::Sequence(SequenceData::Buffer(BuffData {
             data: public_key.serialize().to_vec(),
         }));
-        let function_args = vec![address];
+        let function_args = vec![key];
+        let tx = self.build_transaction_signed(function_name, function_args, nonce)?;
+        Ok(tx)
+    }
+
+    fn build_set_coordinator_data_transaction(
+        &self,
+        address: &StacksAddress,
+        public_key: &StacksPublicKey,
+        nonce: u64,
+    ) -> Result<StacksTransaction, PegWalletError> {
+        let function_name = "set-coordinator-data";
+        let principal = Value::Principal(address.to_account_principal());
+        let key = Value::Sequence(SequenceData::Buffer(BuffData {
+            data: public_key.to_bytes_compressed(),
+        }));
+        let data = TupleData::from_data(vec![
+            (ClarityName::from("addr"), principal),
+            (ClarityName::from("key"), key),
+        ])
+        .map_err(Error::from)?;
+        let function_args = vec![data.into()];
         let tx = self.build_transaction_signed(function_name, function_args, nonce)?;
         Ok(tx)
     }
 
     fn address(&self) -> &StacksAddress {
         &self.address
+    }
+
+    fn public_key(&self) -> &StacksPublicKey {
+        &self.public_key
     }
 }
 
