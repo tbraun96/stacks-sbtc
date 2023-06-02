@@ -7,7 +7,7 @@ use blockstack_lib::{
     types::chainstate::StacksAddress,
     vm::{types::serialization::SerializationError, Value as ClarityValue},
 };
-use frost_signer::config::SignerKeys;
+use frost_signer::config::{PublicKeys, SignerKeyIds};
 use wsts::ecdsa::PublicKey;
 
 /// Kinds of common errors used by stacks coordinator
@@ -53,7 +53,8 @@ pub trait StacksNode {
     fn next_nonce(&mut self, addr: &StacksAddress) -> Result<u64, Error>;
     fn broadcast_transaction(&self, tx: &StacksTransaction) -> Result<(), Error>;
     fn keys_threshold(&self, sender: &StacksAddress) -> Result<u128, Error>;
-    fn signer_keys(&self, sender: &StacksAddress) -> Result<SignerKeys, Error>;
+    fn public_keys(&self, sender: &StacksAddress) -> Result<PublicKeys, Error>;
+    fn signer_key_ids(&self, sender: &StacksAddress) -> Result<SignerKeyIds, Error>;
     fn coordinator_public_key(&self, sender: &StacksAddress) -> Result<Option<PublicKey>, Error>;
     fn bitcoin_wallet_public_key(
         &self,

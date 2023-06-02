@@ -308,7 +308,8 @@ fn create_frost_coordinator_from_contract(
     let coordinator_public_key = stacks_node
         .coordinator_public_key(&config.stacks_address)?
         .ok_or_else(|| Error::NoCoordinator)?;
-    let signer_keys = stacks_node.signer_keys(&config.stacks_address)?;
+    let public_keys = stacks_node.public_keys(&config.stacks_address)?;
+    let signer_key_ids = stacks_node.signer_key_ids(&config.stacks_address)?;
     let network_private_key = Scalar::try_from(
         config
             .network_private_key
@@ -322,7 +323,8 @@ fn create_frost_coordinator_from_contract(
     create_coordinator(&SignerConfig::new(
         keys_threshold.try_into().unwrap(),
         coordinator_public_key,
-        signer_keys,
+        public_keys,
+        signer_key_ids,
         network_private_key,
         frost_state_file,
         http_relay_url,

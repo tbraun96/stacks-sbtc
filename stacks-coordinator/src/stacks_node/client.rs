@@ -8,7 +8,7 @@ use blockstack_lib::{
     types::chainstate::StacksAddress,
     vm::{types::SequenceData, ClarityName, ContractName, Value as ClarityValue},
 };
-use frost_signer::config::SignerKeys;
+use frost_signer::config::{PublicKeys, SignerKeyIds};
 use reqwest::{
     blocking::{Client, Response},
     StatusCode,
@@ -101,7 +101,8 @@ impl NodeClient {
         &self,
         sender: &StacksAddress,
         id: u128,
-        signer_keys: &mut SignerKeys,
+        public_keys: &mut PublicKeys,
+        signer_key_ids: &mut SignerKeyIds,
     ) -> Result<(), StacksNodeError> {
         let function_name = "get-signer-data";
         let signer_data_hex = self.call_read(
@@ -128,17 +129,19 @@ impl NodeClient {
                             signer_data,
                         ));
                     };
-                signer_keys
+                public_keys
                     .signers
                     .insert(id.try_into().unwrap(), public_key);
                 if let Some(ClarityValue::Sequence(SequenceData::List(keys_ids))) =
                     tuple_data.data_map.get(&ClarityName::from("key-ids"))
                 {
+                    let mut this_signer_key_ids = Vec::new();
                     for key_id in &keys_ids.data {
                         if let ClarityValue::UInt(key_id) = key_id {
-                            signer_keys
+                            public_keys
                                 .key_ids
                                 .insert((*key_id).try_into().unwrap(), public_key);
+                            this_signer_key_ids.push((*key_id).try_into().unwrap());
                         } else {
                             return Err(StacksNodeError::MalformedClarityValue(
                                 function_name.to_string(),
@@ -146,6 +149,7 @@ impl NodeClient {
                             ));
                         }
                     }
+                    signer_key_ids.insert(id.try_into().unwrap(), this_signer_key_ids);
                 }
             } else {
                 return Err(StacksNodeError::NoSignerData(id));
@@ -294,14 +298,26 @@ impl StacksNode for NodeClient {
         }
     }
 
-    fn signer_keys(&self, sender: &StacksAddress) -> Result<SignerKeys, StacksNodeError> {
+    fn public_keys(&self, sender: &StacksAddress) -> Result<PublicKeys, StacksNodeError> {
         let total_signers = self.num_signers(sender)?;
         // Retrieve all the signers
-        let mut signer_keys = SignerKeys::default();
+        let mut public_keys = PublicKeys::default();
+        let mut signer_key_ids = SignerKeyIds::default();
         for id in 1..=total_signers {
-            self.signer_data(sender, id, &mut signer_keys)?;
+            self.signer_data(sender, id, &mut public_keys, &mut signer_key_ids)?;
         }
-        Ok(signer_keys)
+        Ok(public_keys)
+    }
+
+    fn signer_key_ids(&self, sender: &StacksAddress) -> Result<SignerKeyIds, StacksNodeError> {
+        let total_signers = self.num_signers(sender)?;
+        // Retrieve all the signers
+        let mut public_keys = PublicKeys::default();
+        let mut signer_key_ids = SignerKeyIds::default();
+        for id in 1..=total_signers {
+            self.signer_data(sender, id, &mut public_keys, &mut signer_key_ids)?;
+        }
+        Ok(signer_key_ids)
     }
 
     fn coordinator_public_key(
@@ -489,10 +505,11 @@ mod tests {
         let config = TestConfig::new();
 
         let h = spawn(move || {
-            let mut signer_keys = SignerKeys::default();
+            let mut public_keys = PublicKeys::default();
+            let mut signer_key_ids = SignerKeyIds::default();
             config
                 .client
-                .signer_data(&config.sender, 1u128, &mut signer_keys)
+                .signer_data(&config.sender, 1u128, &mut public_keys, &mut signer_key_ids)
         });
         write_response(
             config.mock_server,
