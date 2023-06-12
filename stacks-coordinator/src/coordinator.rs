@@ -180,7 +180,7 @@ trait CoordinatorHelpers: Coordinator {
         // Retreive the utxos
         let utxos = self
             .bitcoin_node()
-            .list_unspent(self.fee_wallet().bitcoin().address())?;
+            .list_unspent(self.fee_wallet().bitcoin())?;
 
         // Build unsigned fulfilled peg out transaction
         let mut tx = self.fee_wallet().bitcoin().fulfill_peg_out(op, utxos)?;
@@ -410,7 +410,7 @@ impl TryFrom<&Config> for StacksCoordinator {
 
         // Load the bitcoin wallet
         let local_bitcoin_node = LocalhostBitcoinNode::new(config.bitcoin_node_rpc_url.clone());
-        local_bitcoin_node.load_wallet(bitcoin_wallet.address())?;
+        local_bitcoin_node.load_wallet(&bitcoin_wallet)?;
 
         // If a user has not specified a start block height, begin from the current burn block height by default
         let start_block_height = config
