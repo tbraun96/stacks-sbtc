@@ -15,7 +15,7 @@ use test_utils::{
 #[test]
 fn should_broadcast_transaction() {
     let btcd = BitcoinProcess::new();
-    let local_btc_node = LocalhostBitcoinNode::new(btcd.url().to_string());
+    let local_btc_node = LocalhostBitcoinNode::new(btcd.url().clone());
 
     // Generates a source wallet
     let (source_secret_key, _, source_public_key, _, source_address, secp) = generate_wallet(false);
@@ -109,7 +109,7 @@ fn should_load_wallet() {
     let wallet = BitcoinWallet::new(xonly_pubkey, Network::Regtest);
 
     // Attemp to register the address with the wallet
-    let local_btc_node = LocalhostBitcoinNode::new(btcd.url().to_string());
+    let local_btc_node = LocalhostBitcoinNode::new(btcd.url().clone());
     local_btc_node.load_wallet(&wallet).unwrap();
     let result = btcd.rpc("listreceivedbyaddress", (0, true, true));
 
@@ -142,7 +142,7 @@ fn should_list_unspent() {
 
     let wallet = BitcoinWallet::new(xonly_pubkey, Network::Regtest);
 
-    let local_btc_node = LocalhostBitcoinNode::new(btcd.url().to_string());
+    let local_btc_node = LocalhostBitcoinNode::new(btcd.url().clone());
     local_btc_node.load_wallet(&wallet).unwrap();
 
     // Produce some UTXOs for the address

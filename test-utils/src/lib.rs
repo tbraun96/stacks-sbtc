@@ -221,8 +221,8 @@ impl BitcoinProcess {
         this
     }
 
-    pub fn url(&self) -> &str {
-        self.url.as_str()
+    pub fn url(&self) -> &Url {
+        &self.url
     }
 }
 

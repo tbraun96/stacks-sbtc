@@ -5,6 +5,7 @@ use bitcoin::{consensus::Encodable, hashes::sha256d::Hash, Txid};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, warn};
+use url::Url;
 
 use crate::peg_wallet::BitcoinWallet;
 pub trait BitcoinNode {
@@ -32,6 +33,8 @@ pub enum Error {
     InvalidTxHash,
     #[error("Could not compute descriptor checksum: {0}")]
     DescriptorError(#[from] bdk::descriptor::error::Error),
+    #[error("URL Parse error: {0}")]
+    UrlParseError(#[from] url::ParseError),
 }
 
 #[allow(non_snake_case)]
@@ -60,7 +63,7 @@ struct Wallet {
 }
 
 pub struct LocalhostBitcoinNode {
-    bitcoind_api: String,
+    bitcoind_api: Url,
     wallet_name: String,
 }
 
@@ -125,7 +128,7 @@ impl BitcoinNode for LocalhostBitcoinNode {
 }
 
 impl LocalhostBitcoinNode {
-    pub fn new(bitcoind_api: String) -> LocalhostBitcoinNode {
+    pub fn new(bitcoind_api: Url) -> LocalhostBitcoinNode {
         Self {
             bitcoind_api,
             wallet_name: "stacks_coordinator".to_string(),
@@ -150,7 +153,7 @@ impl LocalhostBitcoinNode {
         self.call_path(
             method,
             params,
-            Some(&format!("wallet/{}", self.wallet_name)),
+            Some(&format!("/wallet/{}", self.wallet_name)),
         )
     }
 
@@ -165,11 +168,13 @@ impl LocalhostBitcoinNode {
         let json_rpc =
             ureq::json!({"jsonrpc": "2.0", "id": "stx", "method": method, "params": params});
 
-        let url = path
-            .map(|path| Cow::Owned(format!("{}{}", &self.bitcoind_api, path)))
-            .unwrap_or(Cow::Borrowed(&self.bitcoind_api));
+        let url = if let Some(path) = path {
+            Cow::Owned(self.bitcoind_api.join(path)?)
+        } else {
+            Cow::Borrowed(&self.bitcoind_api)
+        };
 
-        let response = ureq::post(&url)
+        let response = ureq::post(&url.to_string())
             .send_json(json_rpc)
             .map_err(|e| Error::RPCError(parse_rpc_error(e)))?;
 
