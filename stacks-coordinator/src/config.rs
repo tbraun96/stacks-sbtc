@@ -9,6 +9,9 @@ use url::Url;
 
 use crate::util::address_version;
 
+/// Default polling interval in seconds
+const DEFAULT_POLLING_INTERVAL: u64 = 5;
+
 /// Errors associated with reading the Config file
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -49,6 +52,8 @@ pub struct RawConfig {
     pub http_relay_url: Option<String>,
     pub frost_state_file: Option<String>,
     pub network_private_key: Option<String>,
+    /// Controls how many seconds to wait between polls
+    pub polling_interval: Option<u64>,
 }
 
 impl RawConfig {
@@ -121,6 +126,8 @@ pub struct Config {
     pub http_relay_url: Option<String>,
     pub frost_state_file: Option<String>,
     pub network_private_key: Option<String>,
+    /// Controls how many seconds to wait between polls
+    pub polling_interval: u64,
 }
 
 impl TryFrom<RawConfig> for Config {
@@ -169,6 +176,7 @@ impl TryFrom<RawConfig> for Config {
             http_relay_url: config.http_relay_url,
             frost_state_file: config.frost_state_file,
             network_private_key: config.network_private_key,
+            polling_interval: config.polling_interval.unwrap_or(DEFAULT_POLLING_INTERVAL),
         })
     }
 }
