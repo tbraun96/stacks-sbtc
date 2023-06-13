@@ -4,7 +4,7 @@ use bdk::descriptor::calc_checksum;
 use bitcoin::{consensus::Encodable, hashes::sha256d::Hash, Txid};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 use url::Url;
 
 use crate::peg_wallet::BitcoinWallet;
@@ -91,8 +91,8 @@ impl BitcoinNode for LocalhostBitcoinNode {
         let result = self.create_empty_wallet();
         if let Err(Error::RPCError(message)) = &result {
             if message.contains("Database already exists") {
-                // If the database already exists, no problem. Just emit a warning.
-                warn!(message);
+                // If the database already exists, no problem.
+                info!("Wallet already exists");
             } else {
                 return result;
             }
