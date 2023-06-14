@@ -100,6 +100,7 @@ pub trait Coordinator: Sized {
     // Provided methods
     fn run(mut self, polling_interval: u64) -> Result<()> {
         loop {
+            info!("Polling for withdrawal and deposit requests to process...");
             self.peg_queue().poll(self.stacks_node())?;
             self.process_queue()?;
 
