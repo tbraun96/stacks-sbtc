@@ -4,7 +4,7 @@ members = [
   "frost-test",
   "frost-signer",
   "frost-coordinator",
-  "sbtc-op",
+  "sbtc-cli",
   "stacks-coordinator",
   "stacks-signer",
   "stacks-signer-api",
