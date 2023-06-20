@@ -110,8 +110,14 @@ pub trait Coordinator: Sized {
 
     fn process_queue(&mut self) -> Result<()> {
         match self.peg_queue().sbtc_op()? {
-            Some(SbtcOp::PegIn(op)) => self.peg_in(op),
-            Some(SbtcOp::PegOutRequest(op)) => self.peg_out(op),
+            Some(SbtcOp::PegIn(op)) => {
+                debug!("Processing peg in request: {:?}", op);
+                self.peg_in(op)
+            }
+            Some(SbtcOp::PegOutRequest(op)) => {
+                debug!("Processing peg out request: {:?}", op);
+                self.peg_out(op)
+            }
             None => Ok(()),
         }
     }
@@ -132,6 +138,8 @@ trait CoordinatorHelpers: Coordinator {
 
         // Broadcast the resulting sBTC transaction to the stacks node
         self.stacks_node().broadcast_transaction(&tx)?;
+        info!("Broadcasted deposit sBTC transaction: {}", tx.txid());
+
         Ok(())
     }
 
@@ -148,12 +156,20 @@ trait CoordinatorHelpers: Coordinator {
 
         // Broadcast the resulting sBTC transaction to the stacks node
         self.stacks_node().broadcast_transaction(&burn_tx)?;
+        info!(
+            "Broadcasted withdrawal sBTC transaction: {}",
+            burn_tx.txid()
+        );
 
         // Build and sign a fulfilled bitcoin transaction
         let fulfill_tx = self.fulfill_peg_out(&op)?;
 
         // Broadcast the resulting BTC transaction to the Bitcoin node
         self.bitcoin_node().broadcast_transaction(&fulfill_tx)?;
+        info!(
+            "Broadcasted fulfilled BTC transaction: {}",
+            fulfill_tx.txid()
+        );
         Ok(())
     }
 
