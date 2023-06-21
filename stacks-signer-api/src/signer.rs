@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+
 use std::str::FromStr;
 
 #[derive(thiserror::Error, Debug)]
@@ -9,7 +10,8 @@ pub enum Error {
     InvalidStatusError(String),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Deserialize, Serialize, sqlx::Type)]
+#[sqlx(rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 /// The current status of a signer.
 pub enum Status {
@@ -36,7 +38,7 @@ impl FromStr for Status {
     type Err = Error;
     /// Parses a string into a Status.
     fn from_str(s: &str) -> Result<Self, Error> {
-        Ok(match s {
+        Ok(match s.to_lowercase().as_str() {
             "active" => Self::Active,
             "inactive" => Self::Inactive,
             other => return Err(Error::InvalidStatusError(other.to_owned())),
