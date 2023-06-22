@@ -8,7 +8,7 @@ What is sBTC? https://github.com/stacks-network/stacks-blockchain/wiki/sBTC-Eng-
 [![rust](https://github.com/Trust-Machines/core-eng/actions/workflows/rust.yml/badge.svg)](https://github.com/Trust-Machines/core-eng/actions/workflows/rust.yml)
 [![CodeFactor](https://www.codefactor.io/repository/github/trust-machines/core-eng/badge)](https://www.codefactor.io/repository/github/trust-machines/core-eng)
 
-Documentation: https://core-eng.pages.dev/
+Documentation: https://trust-machines.github.io/stacks-sbtc
 
 ## Projects
 
