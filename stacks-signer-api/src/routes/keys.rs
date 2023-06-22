@@ -32,8 +32,7 @@ pub fn add_key_route(
     pool: SqlitePool,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::post()
-        .and(warp::path("v1"))
-        .and(warp::path("keys"))
+        .and(warp::path!("v1" / "keys"))
         .and(warp::path::end())
         .and(json_body::<Key>())
         .and(with_pool(pool))
@@ -52,8 +51,7 @@ pub fn delete_key_route(
     pool: SqlitePool,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::delete()
-        .and(warp::path("v1"))
-        .and(warp::path("keys"))
+        .and(warp::path!("v1" / "keys"))
         .and(warp::path::end())
         .and(json_body::<Key>())
         .and(with_pool(pool))
@@ -72,8 +70,7 @@ pub fn get_keys_route(
     pool: SqlitePool,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::get()
-        .and(warp::path("v1"))
-        .and(warp::path("keys"))
+        .and(warp::path!("v1" / "keys"))
         .and(warp::query::<KeysQuery>())
         .and(warp::path::end())
         .and(with_pool(pool))
@@ -219,7 +216,7 @@ mod tests {
         let key_no_matching_key = Key {
             signer_id: 1,
             user_id: 1,
-            key: "invalid key".to_string(),
+            key: "invalid key".to_string(), // We don't have this key
         };
 
         let key_no_matching_signer = Key {

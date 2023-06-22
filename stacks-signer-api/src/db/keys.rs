@@ -59,7 +59,6 @@ pub async fn add_key(key: Key, pool: SqlitePool) -> Result<impl warp::Reply, war
 ///
 /// # Params
 /// * signer_id: i64 - The signer ID.
-/// * user_id: i64 - The user ID.
 /// * pool: &SqlitePool - The reference to the Sqlite database connection pool.
 ///
 /// # Returns
@@ -140,6 +139,9 @@ pub async fn get_keys(
     query: KeysQuery,
     pool: SqlitePool,
 ) -> Result<impl warp::Reply, warp::Rejection> {
+    if query.page == Some(0) {
+        return Err(warp::reject::reject());
+    }
     let keys: Vec<String> = sqlx::query!(
         "SELECT key FROM keys WHERE signer_id = ?1 AND user_id = ?2 ORDER BY key ASC",
         query.signer_id,

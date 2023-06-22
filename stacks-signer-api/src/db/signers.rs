@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use crate::{
-    db::{keys::delete_keys_by_id, paginate_items, Error},
+    db::{paginate_items, Error},
     routes::signers::SignerQuery,
     signer::{Signer, Status},
 };
@@ -49,9 +49,6 @@ pub async fn delete_signer(
     signer: Signer,
     pool: SqlitePool,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    // First delete any corresponding keys
-    delete_keys_by_id(signer.signer_id, signer.user_id, &pool).await?;
-
     let rows_deleted = sqlx::query!(
         "DELETE FROM sbtc_signers WHERE signer_id = ?1 AND user_id = ?2",
         signer.signer_id,
@@ -87,6 +84,9 @@ pub async fn get_signers(
     query: SignerQuery,
     pool: SqlitePool,
 ) -> Result<impl warp::Reply, warp::Rejection> {
+    if query.page == Some(0) {
+        return Err(warp::reject::reject());
+    }
     let signers: Vec<(i64, i64, String)> = if let Some(status) = query.status.map(|s| s.as_str()) {
         sqlx::query!(
     "SELECT signer_id, user_id, status FROM sbtc_signers WHERE status = ?1 ORDER BY signer_id ASC", status).fetch_all(&pool).await

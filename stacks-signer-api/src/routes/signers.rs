@@ -30,8 +30,7 @@ pub fn add_signer_route(
     pool: SqlitePool,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::post()
-        .and(warp::path("v1"))
-        .and(warp::path("signers"))
+        .and(warp::path!("v1" / "signers"))
         .and(warp::path::end())
         .and(json_body::<Signer>())
         .and(with_pool(pool))
@@ -50,8 +49,7 @@ pub fn delete_signer_route(
     pool: SqlitePool,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::delete()
-        .and(warp::path("v1"))
-        .and(warp::path("signers"))
+        .and(warp::path!("v1" / "signers"))
         .and(warp::path::end())
         .and(json_body::<Signer>())
         .and(with_pool(pool))
@@ -71,8 +69,7 @@ pub fn get_signers_route(
     pool: SqlitePool,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::get()
-        .and(warp::path("v1"))
-        .and(warp::path("signers"))
+        .and(warp::path!("v1" / "signers"))
         .and(warp::query::<SignerQuery>())
         .and(warp::path::end())
         .and(with_pool(pool))
