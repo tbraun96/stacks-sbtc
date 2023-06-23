@@ -6,7 +6,7 @@ The primary focus of the team for 2023 is sBTC.
 What is sBTC? https://github.com/stacks-network/stacks-blockchain/wiki/sBTC-Eng-Wiki
 
 [![rust](https://github.com/Trust-Machines/core-eng/actions/workflows/rust.yml/badge.svg)](https://github.com/Trust-Machines/core-eng/actions/workflows/rust.yml)
-[![CodeFactor](https://www.codefactor.io/repository/github/trust-machines/core-eng/badge)](https://www.codefactor.io/repository/github/trust-machines/core-eng)
+[![CodeFactor](https://www.codefactor.io/repository/github/trust-machines/stacks-sbtc/badge)](https://www.codefactor.io/repository/github/trust-machines/stacks-sbtc)
 
 Documentation: https://trust-machines.github.io/stacks-sbtc
 
