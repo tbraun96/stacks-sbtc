@@ -1,20 +1,25 @@
+use parse_display::{Display, FromStr};
 use serde::{Deserialize, Serialize};
+use utoipa::{ToResponse, ToSchema};
 
-use std::str::FromStr;
-
-#[derive(thiserror::Error, Debug)]
-/// Common errors that occur when handling Signers.
-pub enum Error {
-    /// An error that can occur when parsing a Status.
-    #[error("Invalid Status Error: {0}")]
-    InvalidStatusError(String),
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Deserialize, Serialize, sqlx::Type)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Deserialize,
+    Serialize,
+    sqlx::Type,
+    Display,
+    FromStr,
+    ToSchema,
+)]
 #[sqlx(rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
+#[display(style = "lowercase")]
 /// The current status of a signer.
-pub enum Status {
+pub enum SignerStatus {
     /// The signer is active and can be used to sign transactions.
     // This implies that the signer has successfully registered its key and is ready to sign.
     Active,
@@ -24,29 +29,7 @@ pub enum Status {
     Inactive,
 }
 
-impl Status {
-    /// Returns the string representation of the Status.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Active => "active",
-            Self::Inactive => "inactive",
-        }
-    }
-}
-
-impl FromStr for Status {
-    type Err = Error;
-    /// Parses a string into a Status.
-    fn from_str(s: &str) -> Result<Self, Error> {
-        Ok(match s.to_lowercase().as_str() {
-            "active" => Self::Active,
-            "inactive" => Self::Inactive,
-            other => return Err(Error::InvalidStatusError(other.to_owned())),
-        })
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Deserialize, Serialize, ToResponse, ToSchema)]
 /// A signer is a user that can participate in a signing round to sign transactions.
 pub struct Signer {
     /// The signer's ID.
@@ -54,5 +37,5 @@ pub struct Signer {
     /// The user's ID.
     pub user_id: i64,
     /// The current status of the signer.
-    pub status: Status,
+    pub status: SignerStatus,
 }

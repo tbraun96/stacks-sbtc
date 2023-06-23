@@ -31,6 +31,27 @@ pub struct Pagination {
     pub limit: Option<usize>,
 }
 
+/// Paginate a slice of items.
+///
+/// This utility function slices a given set of items based on the specified `page` and `limit`.
+/// If `page` and/or `limit` are not provided (None), the function will use default values.
+///
+/// # Params
+/// * items: &[T] - The reference to the slice of items to be paginated.
+/// * page: Option<usize> - The optional page number for pagination (1-based index).
+/// * limit: Option<usize> - The optional limit representing the maximum number of items per page.
+///
+/// # Returns
+/// * &[T]: A slice of the original items, paginated according to the provided page and limit.
+pub fn paginate_items<T>(items: &[T], page: Option<usize>, limit: Option<usize>) -> &[T] {
+    let page = page.unwrap_or(1);
+    let limit = limit.unwrap_or(usize::MAX);
+
+    let start_index = items.len().min((page - 1) * limit);
+    let end_index = items.len().min(start_index + limit);
+    &items[start_index.min(end_index)..end_index]
+}
+
 /// A helper function to extract a JSON body from a request.
 pub fn json_body<T: std::marker::Send + DeserializeOwned>(
 ) -> impl Filter<Extract = (T,), Error = warp::Rejection> + Clone {

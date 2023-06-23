@@ -1,8 +1,8 @@
 use std::convert::Infallible;
 
 use crate::{
-    db::{self, paginate_items, vote::get_vote_by_id},
-    routes::with_pool,
+    db::{self, vote::get_vote_by_id},
+    routes::{paginate_items, with_pool},
     transaction::TransactionResponse,
     vote::VoteStatus,
 };

@@ -12,20 +12,15 @@ pub mod vote;
 use parse_display::ParseError;
 use sqlx::SqlitePool;
 
-use crate::signer::Error as SignerError;
-
 /// Custom error type for this database module
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    /// Sqlite related error
-    #[error("Sqlite Error: {0}")]
+    /// Sqlx related error
+    #[error("Sqlx Error: {0}")]
     SqlxError(#[from] sqlx::Error),
-    /// Signer related error
-    #[error("Signer Error: {0}")]
-    SignerError(#[from] SignerError),
     /// Parse related error
-    #[error("Parsing error occurred")]
-    ParseError(#[from] ParseError),
+    #[error("Parsing error occurred due to malformed data")]
+    MalformedData(#[from] ParseError),
 }
 impl warp::reject::Reject for Error {}
 
@@ -66,6 +61,16 @@ const SQL_SCHEMA_TRANSACTIONS: &str = r#"
         );
 "#;
 
+const SQL_KEY_SIGNER_TRIGGER: &str = r#"
+    CREATE TRIGGER add_default_signer
+    AFTER INSERT ON keys
+    FOR EACH ROW
+        WHEN NOT EXISTS (SELECT 1 FROM sbtc_signers WHERE signer_id = NEW.signer_id AND user_id = NEW.user_id)
+        BEGIN
+            INSERT INTO sbtc_signers (signer_id, user_id, status)
+            VALUES (NEW.signer_id, NEW.user_id, 'inactive');
+        END;
+"#;
 const SQL_SCHEMA_VOTE: &str = r#"
         CREATE TABLE votes (
             txid TEXT PRIMARY KEY,
@@ -81,15 +86,16 @@ const SQL_SCHEMA_VOTE: &str = r#"
 
 const SQL_TRANSACTION_VOTE_TRIGGER: &str = r#"
         CREATE TRIGGER add_empty_vote
-        AFTER INSERT ON transactions
-        FOR EACH ROW
-            BEGIN
-            INSERT INTO votes (
-                txid, vote_status, vote_choice, vote_mechanism, target_consensus, current_consensus
-            ) VALUES (
-                NEW.txid, 'pending', NULL, 'manual', 70, 0
-            );
-        END;
+            AFTER INSERT ON transactions
+            FOR EACH ROW
+                WHEN NEW.txid NOT IN (SELECT txid FROM votes)
+                BEGIN
+                    INSERT INTO votes (
+                        txid, vote_status, vote_choice, vote_mechanism, target_consensus, current_consensus
+                    ) VALUES (
+                        NEW.txid, 'pending', NULL, 'manual', 70, 0
+                    );
+                END;
 "#;
 
 /// Initialize the database pool from the given file path or in memory if none is provided.
@@ -108,28 +114,9 @@ pub async fn init_pool(path: Option<String>) -> Result<SqlitePool, Error> {
     sqlx::query(SQL_SCHEMA_KEYS).execute(&pool).await?;
     sqlx::query(SQL_SCHEMA_TRANSACTIONS).execute(&pool).await?;
     sqlx::query(SQL_SCHEMA_VOTE).execute(&pool).await?;
+    sqlx::query(SQL_KEY_SIGNER_TRIGGER).execute(&pool).await?;
     sqlx::query(SQL_TRANSACTION_VOTE_TRIGGER)
         .execute(&pool)
         .await?;
     Ok(pool)
-}
-
-/// Paginate a slice of items.
-///
-/// This utility function slices a given set of items based on the specified `page` and `limit`.
-/// If `page` and/or `limit` are not provided (None), the function will use default values.
-///
-/// # Params
-/// * items: &[T] - The reference to the slice of items to be paginated.
-/// * page: Option<usize> - The optional page number for pagination (1-based index).
-/// * limit: Option<usize> - The optional limit representing the maximum number of items per page.
-///
-/// # Returns
-/// * &[T]: A slice of the original items, paginated according to the provided page and limit.
-pub fn paginate_items<T>(items: &[T], page: Option<usize>, limit: Option<usize>) -> &[T] {
-    let page = page.unwrap_or(1);
-    let limit = limit.unwrap_or(items.len());
-    let start_index = items.len().min((page - 1) * limit);
-    let end_index = items.len().min(start_index + limit);
-    &items[start_index.min(end_index)..end_index]
 }

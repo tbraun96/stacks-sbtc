@@ -9,6 +9,8 @@ Usage documentation can be found in the [README](https://github.com/Trust-Machin
 
 /// Sqlite database
 pub mod db;
+/// Signer API Errors
+pub mod error;
 /// Delegator key
 pub mod key;
 /// Signer API Routes

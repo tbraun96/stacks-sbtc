@@ -3,7 +3,10 @@ use rand::Rng;
 use sqlx::SqlitePool;
 use stacks_signer_api::{
     db::{self, transaction::add_transaction, vote::add_vote},
+    error::{ErrorCode, ErrorResponse},
+    key::Key,
     routes::all_routes,
+    signer::{Signer, SignerStatus},
     transaction::{Transaction, TransactionAddress, TransactionKind, TransactionResponse},
     vote::{Vote, VoteChoice, VoteMechanism, VoteRequest, VoteResponse, VoteStatus, VoteTally},
 };
@@ -29,6 +32,12 @@ use warp::{
         stacks_signer_api::routes::transaction::get_transaction_by_id,
         stacks_signer_api::routes::transaction::get_transactions,
         stacks_signer_api::routes::vote::vote,
+        stacks_signer_api::routes::signers::get_signers,
+        stacks_signer_api::routes::signers::add_signer,
+        stacks_signer_api::routes::signers::delete_signer,
+        stacks_signer_api::routes::keys::add_key,
+        stacks_signer_api::routes::keys::delete_key,
+        stacks_signer_api::routes::keys::get_keys,
     ),
     components(
         schemas(
@@ -41,9 +50,14 @@ use warp::{
             VoteMechanism,
             VoteRequest,
             VoteStatus,
-            VoteTally
+            VoteTally,
+            Signer,
+            ErrorCode,
+            ErrorResponse,
+            SignerStatus,
+            Key,
         ),
-        responses(TransactionResponse, VoteResponse)
+        responses(TransactionResponse, VoteResponse, Signer, ErrorResponse, Key)
     )
 )]
 struct ApiDoc;
@@ -103,9 +117,6 @@ struct RunArgs {
     /// Port and address to run API server on
     #[command(flatten)]
     pub server: ServerArgs,
-    /// Database file path
-    #[arg(long)]
-    pub db: Option<String>,
 }
 
 #[derive(Parser, Debug)]

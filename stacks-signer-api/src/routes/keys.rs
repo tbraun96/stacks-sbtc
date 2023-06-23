@@ -1,13 +1,17 @@
+use std::convert::Infallible;
+
 use crate::{
-    db::keys::{add_key, delete_key, get_keys},
+    db,
+    error::{ErrorCode, ErrorResponse},
     key::Key,
-    routes::{json_body, with_pool},
+    routes::{json_body, paginate_items, with_pool},
 };
 use serde::Deserialize;
 use sqlx::SqlitePool;
-use warp::Filter;
+use utoipa::IntoParams;
+use warp::{http, Filter, Reply};
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, IntoParams)]
 /// The query parameters for the get keys route.
 pub struct KeysQuery {
     /// The signer's ID.
@@ -77,6 +81,79 @@ pub fn get_keys_route(
         .and_then(get_keys)
 }
 
+/// Add a delegator key to the Signer
+#[utoipa::path(
+    post,
+    path = "/v1/keys/",
+    request_body = Key,
+    responses(
+        (status = OK, description = "Key added successfully."),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error occurred.", body = ErrorResponse)
+    )
+)]
+pub async fn add_key(key: Key, pool: SqlitePool) -> Result<Box<dyn Reply>, Infallible> {
+    // Insert the key into the database
+    if let Err(e) = db::keys::add_key(&pool, &key).await {
+        Ok(ErrorResponse::from(e).warp_reply(http::StatusCode::INTERNAL_SERVER_ERROR))
+    } else {
+        Ok(Box::new(http::StatusCode::OK))
+    }
+}
+
+/// Delete a given delegator key.
+#[utoipa::path(
+    delete,
+    path = "/v1/keys/",
+    request_body = Key,
+    responses(
+        (status = OK, description = "Key deleted successfully."),
+        (status = NOT_FOUND, description = "Key not found.", body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error occurred.", body = ErrorResponse)
+    )
+)]
+pub async fn delete_key(key: Key, pool: SqlitePool) -> Result<Box<dyn Reply>, Infallible> {
+    match db::keys::delete_key(&pool, &key).await {
+        Ok(result) => {
+            if result.rows_affected() == 0 {
+                let error_response = ErrorResponse {
+                    error: ErrorCode::KeyNotFound,
+                    message: None,
+                };
+                return Ok(error_response.warp_reply(http::StatusCode::NOT_FOUND));
+            }
+            Ok(Box::new(http::StatusCode::OK))
+        }
+        Err(e) => Ok(ErrorResponse::from(e).warp_reply(http::StatusCode::INTERNAL_SERVER_ERROR)),
+    }
+}
+
+/// Get all delegator keys for a given signer ID and user ID.
+#[utoipa::path(
+    get,
+    path = "/v1/signers/",
+    request_body = Signer,
+    responses(
+        (status = OK, description = "Keys retrieved successfully.", body = Vec<Key>),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error occurred.", body = ErrorResponse)
+    ),
+    params(KeysQuery)
+)]
+pub async fn get_keys(query: KeysQuery, pool: SqlitePool) -> Result<Box<dyn Reply>, Infallible> {
+    if query.page == Some(0) {
+        return Ok(Box::new(http::StatusCode::BAD_REQUEST));
+    }
+    match db::keys::get_keys(&pool, query.signer_id, query.user_id).await {
+        Ok(keys) => {
+            let displayed_keys = paginate_items(&keys, query.page, query.limit);
+            Ok(Box::new(warp::reply::with_status(
+                warp::reply::json(&displayed_keys),
+                http::StatusCode::OK,
+            )))
+        }
+        Err(e) => Ok(ErrorResponse::from(e).warp_reply(http::StatusCode::INTERNAL_SERVER_ERROR)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,58 +164,51 @@ mod tests {
         let pool = init_pool(None)
             .await
             .expect("Failed to initialize a new database pool.");
-        insert_test_data(pool.clone()).await;
+        for key in test_data() {
+            add_key(key, pool.clone()).await.unwrap();
+        }
         pool
     }
 
-    // Insert test data into the database
-    async fn insert_test_data(pool: SqlitePool) {
-        let key1 = Key {
-            signer_id: 1,
-            user_id: 1,
-            key: "key1".to_string(),
-        };
-        let key2 = Key {
-            signer_id: 1,
-            user_id: 1,
-            key: "key2".to_string(),
-        };
-        let key3 = Key {
-            signer_id: 1,
-            user_id: 1,
-            key: "key3".to_string(),
-        };
-        let key4 = Key {
-            signer_id: 1,
-            user_id: 1,
-            key: "key4".to_string(),
-        };
-        let key5 = Key {
-            signer_id: 1,
-            user_id: 1,
-            key: "key5".to_string(),
-        };
-        let key_diff_signer_id = Key {
-            signer_id: 10,
-            user_id: 1,
-            key: "key1".to_string(),
-        };
-        // Add test data
-        add_key(key1, pool.clone()).await.unwrap();
-        add_key(key2, pool.clone()).await.unwrap();
-        add_key(key3, pool.clone()).await.unwrap();
-        add_key(key4, pool.clone()).await.unwrap();
-        add_key(key5, pool.clone()).await.unwrap();
-        add_key(key_diff_signer_id, pool.clone()).await.unwrap();
+    fn test_data() -> Vec<Key> {
+        vec![
+            Key {
+                signer_id: 1,
+                user_id: 1,
+                key: "key1".to_string(),
+            },
+            Key {
+                signer_id: 1,
+                user_id: 1,
+                key: "key2".to_string(),
+            },
+            Key {
+                signer_id: 1,
+                user_id: 1,
+                key: "key3".to_string(),
+            },
+            Key {
+                signer_id: 1,
+                user_id: 1,
+                key: "key4".to_string(),
+            },
+            Key {
+                signer_id: 1,
+                user_id: 1,
+                key: "key5".to_string(),
+            },
+            Key {
+                signer_id: 10,
+                user_id: 1,
+                key: "key1".to_string(),
+            },
+        ]
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ntest::timeout(1000)]
     async fn test_get_keys() {
         let pool = init_db().await;
-
-        // Add test data
-        insert_test_data(pool.clone()).await;
 
         let api = warp::test::request()
             .path("/v1/keys?signer_id=1&user_id=1")
@@ -148,7 +218,9 @@ mod tests {
             .await;
 
         assert_eq!(api.status(), StatusCode::OK);
-        assert_eq!(api.body(), r#"["key1","key2","key3","key4","key5"]"#);
+        let keys: Vec<Key> =
+            serde_json::from_slice(api.body()).expect("failed to deserialize Keys");
+        assert_eq!(keys, test_data()[..5]);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -169,17 +241,14 @@ mod tests {
             .reply(&add_key_route(pool))
             .await;
 
-        assert_eq!(api.status(), StatusCode::CREATED);
-        assert_eq!(api.body(), r#"{"status":"added"}"#);
+        assert_eq!(api.status(), StatusCode::OK);
+        assert_eq!(api.body(), r#""#);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ntest::timeout(1000)]
     async fn test_delete_key() {
         let pool = init_db().await;
-
-        // Add test data
-        insert_test_data(pool.clone()).await;
 
         let key_to_delete = Key {
             signer_id: 1,
@@ -196,16 +265,13 @@ mod tests {
             .await;
 
         assert_eq!(api.status(), StatusCode::OK);
-        assert_eq!(api.body(), r#"{"status":"deleted"}"#);
+        assert_eq!(api.body(), r#""#);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ntest::timeout(1000)]
     async fn test_delete_key_not_found() {
         let pool = init_db().await;
-
-        // Add test data
-        insert_test_data(pool.clone()).await;
 
         let key_no_matching_user = Key {
             signer_id: 1,
@@ -241,7 +307,15 @@ mod tests {
                 .await;
 
             assert_eq!(api.status(), StatusCode::NOT_FOUND);
-            assert_eq!(api.body(), r#"{"error":"not found"}"#);
+            assert_eq!(
+                api.body(),
+                serde_json::to_string(&ErrorResponse {
+                    error: ErrorCode::KeyNotFound,
+                    message: None
+                })
+                .unwrap()
+                .as_str()
+            );
         }
     }
 }

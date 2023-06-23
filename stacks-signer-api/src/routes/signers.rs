@@ -1,17 +1,23 @@
+use std::convert::Infallible;
+
 use crate::{
-    db::signers::{add_signer, delete_signer, get_signers},
-    routes::{json_body, with_pool},
-    signer::{Signer, Status},
+    db,
+    error::{ErrorCode, ErrorResponse},
+    routes::{json_body, paginate_items, with_pool},
+    signer::{Signer, SignerStatus},
 };
+
 use serde::Deserialize;
 use sqlx::SqlitePool;
+use utoipa::IntoParams;
 use warp::Filter;
+use warp::{http, Reply};
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, IntoParams)]
 /// Query parameters for the get signers route.
 pub struct SignerQuery {
     /// The current status of the signers to retrieve.
-    pub status: Option<Status>,
+    pub status: Option<SignerStatus>,
     /// The page number.
     pub page: Option<usize>,
     /// The limit of signers per page.
@@ -76,11 +82,86 @@ pub fn get_signers_route(
         .and_then(get_signers)
 }
 
+/// Add a new signer or update an existing signer's status.
+#[utoipa::path(
+    post,
+    path = "/v1/signers/",
+    request_body = Signer,
+    responses(
+        (status = OK, description = "Signer added sucessfully."),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error occurred.", body = ErrorResponse)
+    )
+)]
+pub async fn add_signer(signer: Signer, pool: SqlitePool) -> Result<Box<dyn Reply>, Infallible> {
+    if let Err(e) = db::signers::add_signer(&pool, &signer).await {
+        Ok(ErrorResponse::from(e).warp_reply(http::StatusCode::INTERNAL_SERVER_ERROR))
+    } else {
+        Ok(Box::new(http::StatusCode::OK))
+    }
+}
+
+/// Delete a given signer.
+#[utoipa::path(
+    delete,
+    path = "/v1/signers/",
+    request_body = Signer,
+    responses(
+        (status = OK, description = "Signer deleted sucessfully."),
+        (status = NOT_FOUND, description = "Signer not found.", body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error occurred.", body = ErrorResponse)
+    )
+)]
+pub async fn delete_signer(signer: Signer, pool: SqlitePool) -> Result<Box<dyn Reply>, Infallible> {
+    match db::signers::delete_signer(&pool, &signer).await {
+        Ok(result) => {
+            if result.rows_affected() == 0 {
+                let error_response = ErrorResponse {
+                    error: ErrorCode::SignerNotFound,
+                    message: None,
+                };
+                return Ok(error_response.warp_reply(http::StatusCode::NOT_FOUND));
+            }
+            Ok(Box::new(http::StatusCode::OK))
+        }
+        Err(e) => Ok(ErrorResponse::from(e).warp_reply(http::StatusCode::INTERNAL_SERVER_ERROR)),
+    }
+}
+
+/// Get a list of signers, optionally filtered by status.
+#[utoipa::path(
+    get,
+    path = "/v1/signers/",
+    request_body = Signer,
+    responses(
+        (status = OK, description = "Signers retrieved successfully.", body = Vec<Signer>),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error occurred.", body = ErrorResponse)
+    ),
+    params(SignerQuery)
+)]
+pub async fn get_signers(
+    query: SignerQuery,
+    pool: SqlitePool,
+) -> Result<Box<dyn Reply>, Infallible> {
+    if query.page == Some(0) {
+        return Ok(Box::new(http::StatusCode::BAD_REQUEST));
+    }
+    match db::signers::get_signers(&pool, query.status).await {
+        Ok(signers) => {
+            let displayed_signers = paginate_items(&signers, query.page, query.limit);
+            Ok(Box::new(warp::reply::with_status(
+                warp::reply::json(&displayed_signers),
+                http::StatusCode::OK,
+            )))
+        }
+        Err(e) => Ok(ErrorResponse::from(e).warp_reply(http::StatusCode::INTERNAL_SERVER_ERROR)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::{init_pool, signers::add_signer};
-    use crate::signer::{Signer, Status};
+    use crate::db::init_pool;
+    use crate::signer::Signer;
     use warp::http;
 
     async fn init_db() -> SqlitePool {
@@ -93,23 +174,23 @@ mod tests {
 
     // Insert test data into the database
     async fn insert_test_data(pool: SqlitePool) {
-        add_signer(
-            Signer {
+        db::signers::add_signer(
+            &pool,
+            &Signer {
                 signer_id: 1,
                 user_id: 2,
-                status: Status::Active,
+                status: SignerStatus::Active,
             },
-            pool.clone(),
         )
         .await
         .unwrap();
-        add_signer(
-            Signer {
+        db::signers::add_signer(
+            &pool,
+            &Signer {
                 signer_id: 3,
                 user_id: 4,
-                status: Status::Inactive,
+                status: SignerStatus::Inactive,
             },
-            pool,
         )
         .await
         .unwrap();
@@ -119,9 +200,6 @@ mod tests {
     #[ntest::timeout(1000)]
     async fn test_get_signers() {
         let pool = init_db().await;
-
-        // Add test data
-        insert_test_data(pool.clone()).await;
 
         let api = warp::test::request()
             .path("/v1/signers?status=active")
@@ -139,7 +217,7 @@ mod tests {
             Signer {
                 signer_id: 1,
                 user_id: 2,
-                status: Status::Active,
+                status: SignerStatus::Active,
             }
         );
     }
@@ -152,7 +230,7 @@ mod tests {
         let new_signer = Signer {
             signer_id: 5,
             user_id: 6,
-            status: Status::Active,
+            status: SignerStatus::Active,
         };
 
         let api = warp::test::request()
@@ -162,8 +240,8 @@ mod tests {
             .reply(&add_signer_route(pool))
             .await;
 
-        assert_eq!(api.status(), http::StatusCode::CREATED);
-        assert_eq!(api.body(), r#"{"status":"added"}"#);
+        assert_eq!(api.status(), http::StatusCode::OK);
+        assert_eq!(api.body(), r#""#);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -171,13 +249,10 @@ mod tests {
     async fn test_delete_signer() {
         let pool = init_db().await;
 
-        // Add test data
-        insert_test_data(pool.clone()).await;
-
         let signer_to_delete = Signer {
             signer_id: 1,
             user_id: 2,
-            status: Status::Active,
+            status: SignerStatus::Active,
         };
 
         let api = warp::test::request()
@@ -189,7 +264,7 @@ mod tests {
             .await;
 
         assert_eq!(api.status(), http::StatusCode::OK);
-        assert_eq!(api.body(), r#"{"status":"deleted"}"#);
+        assert_eq!(api.body(), r#""#);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -197,13 +272,10 @@ mod tests {
     async fn test_delete_signer_not_found() {
         let pool = init_db().await;
 
-        // Add test data
-        insert_test_data(pool.clone()).await;
-
         let signer_to_delete = Signer {
             signer_id: 5,
             user_id: 2,
-            status: Status::Active,
+            status: SignerStatus::Active,
         };
 
         let api = warp::test::request()
@@ -215,6 +287,14 @@ mod tests {
             .await;
 
         assert_eq!(api.status(), http::StatusCode::NOT_FOUND);
-        assert_eq!(api.body(), r#"{"error":"not found"}"#);
+        assert_eq!(
+            api.body(),
+            serde_json::to_string(&ErrorResponse {
+                error: ErrorCode::SignerNotFound,
+                message: None
+            })
+            .unwrap()
+            .as_str()
+        );
     }
 }
