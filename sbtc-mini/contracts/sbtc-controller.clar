@@ -9,11 +9,12 @@
 (define-constant contract-deployer tx-sender)
 (define-constant err-unauthorised (err u401))
 
+
 ;;;;;;;;;;;;;;;;;
 ;;; variables ;;;
 ;;;;;;;;;;;;;;;;;
 
-(define-data-var peg-state bool true)
+
 
 ;;;;;;;;;;;;
 ;;; maps ;;;
@@ -32,10 +33,6 @@
 	(ok (asserts! (default-to false (map-get? privileged-protocol-principals who)) err-unauthorised))
 )
 
-(define-read-only (current-peg-state)
-	(var-get peg-state)
-)
-
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;
@@ -49,11 +46,6 @@
 		(ok (map set-protocol-iter protocol-principals))
 	)
 )
-
-;; to-do: add a function to update the peg state (only current pool contract can call this?)
-;; Update Peg State
-;; @desc: Updates the peg state to the value passed in
-
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;
