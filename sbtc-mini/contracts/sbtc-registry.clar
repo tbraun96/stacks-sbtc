@@ -44,7 +44,7 @@
 	(var-get peg-state)
 )
 
-(define-read-only (is-protocol-caller (who principal))
+(define-read-only (is-protocol-caller)
 	(contract-call? .sbtc-controller is-protocol-caller contract-caller)
 )
 
@@ -54,7 +54,7 @@
 
 (define-public (assert-new-burn-wtxid-and-height (txid (buff 32)) (burn-height uint))
 	(begin
-		(try! (is-protocol-caller contract-caller))
+		(try! (is-protocol-caller))
 		(asserts! (is-eq (len txid) u32) err-invalid-txid-length)
 		(asserts! (map-insert processed-burn-wtxids txid true) err-burn-tx-already-processed)
 		(ok (asserts! (<= (+ burn-height (var-get burnchain-confirmations-required)) burn-block-height) err-minimum-burnchain-confirmations-not-reached))
@@ -69,13 +69,9 @@
 	(map-get? peg-wallets-cycle peg-wallet)
 )
 
-(define-read-only (get-current-peg-wallet)
-	(map-get? peg-wallets (contract-call? 'ST000000000000000000002AMW42H.pox-2 current-pox-reward-cycle))
-)
-
 (define-public (insert-cycle-peg-wallet (cycle uint) (peg-wallet { version: (buff 1), hashbytes: (buff 32) }))
 	(begin
-		(try! (is-protocol-caller contract-caller))
+		(try! (is-protocol-caller))
 		(asserts! (map-insert peg-wallets-cycle peg-wallet cycle) err-peg-wallet-already-set)
 		(ok (asserts! (map-insert peg-wallets cycle peg-wallet) err-peg-wallet-already-set))
 	)
@@ -109,7 +105,7 @@
 ;; Update peg-state
 (define-public (set-peg-state (state bool))
 	(begin
-		(try! (is-protocol-caller contract-caller))
+		(try! (is-protocol-caller))
 		(var-set peg-state state)
 		(ok state)
 	)
@@ -124,7 +120,7 @@
 	(unlock-script (buff 128))
 	)
 	(let ((nonce (var-get peg-out-request-nonce)))
-		(try! (is-protocol-caller contract-caller))
+		(try! (is-protocol-caller))
 		(map-set peg-out-requests nonce {value: value, sender: sender, destination: destination, unlock-script: unlock-script, burn-height: burn-block-height, expiry-burn-height: expiry-burn-height })
 		(var-set peg-out-request-nonce (+ nonce u1))
 		(var-set peg-out-requests-pending (+ (var-get peg-out-requests-pending) u1))
@@ -142,7 +138,7 @@
 ;; #[allow(unchecked_data)]
 (define-public (get-and-settle-pending-peg-out-request (id uint) (settled-state (buff 1)))
 	(let ((request (unwrap! (map-get? peg-out-requests id) err-unknown-peg-out-request)))
-		(try! (is-protocol-caller contract-caller))
+		(try! (is-protocol-caller))
 		(asserts! (is-eq (default-to peg-out-state-requested (map-get? peg-out-request-state id)) peg-out-state-requested) err-peg-out-not-pending)
 		(asserts! (or (is-eq settled-state peg-out-state-fulfilled) (is-eq settled-state peg-out-state-reclaimed)) err-not-settled-state)
 		(var-set peg-out-requests-pending (- (var-get peg-out-requests-pending) u1))
