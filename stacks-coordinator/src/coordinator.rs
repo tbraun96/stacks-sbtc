@@ -148,11 +148,17 @@ trait CoordinatorHelpers: Coordinator {
         let address = *self.fee_wallet().stacks().address();
         let nonce = self.stacks_node_mut().next_nonce(&address)?;
 
+        // First build both the sBTC and BTC transactions before attempting to broadcast either of them
+        // This ensures that if either of the transactions fail to build, neither of them will be broadcast
+
         // Build a burn transaction using the peg out request op and calculated nonce
         let burn_tx = self
             .fee_wallet()
             .stacks()
             .build_burn_transaction(&op, nonce)?;
+
+        // Build and sign a fulfilled bitcoin transaction
+        let fulfill_tx = self.fulfill_peg_out(&op)?;
 
         // Broadcast the resulting sBTC transaction to the stacks node
         self.stacks_node().broadcast_transaction(&burn_tx)?;
@@ -160,10 +166,6 @@ trait CoordinatorHelpers: Coordinator {
             "Broadcasted withdrawal sBTC transaction: {}",
             burn_tx.txid()
         );
-
-        // Build and sign a fulfilled bitcoin transaction
-        let fulfill_tx = self.fulfill_peg_out(&op)?;
-
         // Broadcast the resulting BTC transaction to the Bitcoin node
         self.bitcoin_node().broadcast_transaction(&fulfill_tx)?;
         info!(
