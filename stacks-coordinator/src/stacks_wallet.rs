@@ -142,38 +142,49 @@ impl StacksWallet {
     }
 }
 
-impl StacksWalletTrait for StacksWallet {
-    fn build_mint_transaction(
+/// Build a StacksTransaction using the provided wallet and nonce
+pub trait BuildStacksTransaction {
+    fn build_transaction(
         &self,
-        op: &PegInOp,
+        wallet: &StacksWallet,
+        nonce: u64,
+    ) -> Result<StacksTransaction, PegWalletError>;
+}
+
+impl BuildStacksTransaction for PegInOp {
+    fn build_transaction(
+        &self,
+        wallet: &StacksWallet,
         nonce: u64,
     ) -> Result<StacksTransaction, PegWalletError> {
         let function_name = "mint!";
 
         // Build the function arguments
-        let amount = Value::UInt(op.amount.into());
-        let principal = Value::from(op.recipient.clone());
+        let amount = Value::UInt(self.amount.into());
+        let principal = Value::from(self.recipient.clone());
         //Note that this tx_id is only used to print info in the contract call.
         let tx_id = Value::from(ASCIIData {
-            data: op.txid.to_string().as_bytes().to_vec(),
+            data: self.txid.to_string().as_bytes().to_vec(),
         });
         let function_args: Vec<Value> = vec![amount, principal, tx_id];
-        let tx = self.build_transaction_signed(function_name, function_args, nonce)?;
+        let tx = wallet.build_transaction_signed(function_name, function_args, nonce)?;
         Ok(tx)
     }
+}
 
-    fn build_burn_transaction(
+impl BuildStacksTransaction for PegOutRequestOp {
+    fn build_transaction(
         &self,
-        op: &PegOutRequestOp,
+        wallet: &StacksWallet,
         nonce: u64,
     ) -> Result<StacksTransaction, PegWalletError> {
         let function_name = "burn!";
 
         // Build the function arguments
-        let amount = Value::UInt(op.amount.into());
+        let amount = Value::UInt(self.amount.into());
         // Retrieve the stacks address to burn from
-        let address = op
-            .stx_address(address_version(&self.version))
+        let address = self
+            .stx_address(address_version(&wallet.version))
             .map_err(|_| {
                 Error::MalformedOp(
                     "Failed to recover stx address from peg-out request op.".to_string(),
@@ -183,14 +194,23 @@ impl StacksWalletTrait for StacksWallet {
         let principal = Value::Principal(principal_data);
         //Note that this tx_id is only used to print info inside the contract call.
         let tx_id = Value::from(ASCIIData {
-            data: op.txid.to_string().as_bytes().to_vec(),
+            data: self.txid.to_string().as_bytes().to_vec(),
         });
         let function_args: Vec<Value> = vec![amount, principal, tx_id];
 
-        let tx = self.build_transaction_signed(function_name, function_args, nonce)?;
+        let tx = wallet.build_transaction_signed(function_name, function_args, nonce)?;
         Ok(tx)
     }
+}
 
+impl StacksWalletTrait for StacksWallet {
+    fn build_transaction<T: BuildStacksTransaction>(
+        &self,
+        op: &T,
+        nonce: u64,
+    ) -> Result<StacksTransaction, PegWalletError> {
+        op.build_transaction(self, nonce)
+    }
     fn build_set_bitcoin_wallet_public_key_transaction(
         &self,
         public_key: &PublicKey,
@@ -233,6 +253,10 @@ impl StacksWalletTrait for StacksWallet {
 
     fn public_key(&self) -> &StacksPublicKey {
         &self.public_key
+    }
+
+    fn set_fee(&mut self, fee: u64) {
+        self.fee = fee;
     }
 }
 
@@ -318,7 +342,7 @@ mod tests {
         };
         let wallet = stacks_wallet();
         let tx = wallet
-            .build_mint_transaction(&p, 0)
+            .build_transaction(&p, 0)
             .expect("Failed to construct mint transaction.");
         tx.verify()
             .expect("build_mint_transaction generated a transaction with an invalid signature");
@@ -329,7 +353,7 @@ mod tests {
         let wallet = stacks_wallet();
         let op = build_peg_out_request_op(PRIVATE_KEY_HEX, 10, 1, 3);
         let tx = wallet
-            .build_burn_transaction(&op, 0)
+            .build_transaction(&op, 0)
             .expect("Failed to construct burn transaction.");
         tx.verify()
             .expect("build_burn_transaction generated a transaction with an invalid signature.");
@@ -352,11 +376,7 @@ mod tests {
             burn_header_hash: BurnchainHeaderHash([0x00; 32]),
         };
         assert_eq!(
-            wallet
-                .build_burn_transaction(&op, 0)
-                .err()
-                .unwrap()
-                .to_string(),
+            wallet.build_transaction(&op, 0).err().unwrap().to_string(),
             "Stacks Wallet Error: Failed to recover stx address from peg-out request op."
         );
     }

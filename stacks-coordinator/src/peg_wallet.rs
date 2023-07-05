@@ -1,7 +1,9 @@
 use crate::bitcoin_node::{self, UTXO};
 use crate::bitcoin_wallet::{BitcoinWallet as BitcoinWalletStruct, Error as BitcoinWalletError};
-use crate::stacks_node::{self, PegOutRequestOp};
-use crate::stacks_wallet::{Error as StacksWalletError, StacksWallet as StacksWalletStruct};
+use crate::stacks_node::PegOutRequestOp;
+use crate::stacks_wallet::{
+    BuildStacksTransaction, Error as StacksWalletError, StacksWallet as StacksWalletStruct,
+};
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{Address as BitcoinAddress, XOnlyPublicKey};
 use blockstack_lib::types::chainstate::StacksPublicKey;
@@ -18,15 +20,9 @@ pub enum Error {
 
 pub trait StacksWallet {
     /// Builds a verified signed transaction for a given peg-in operation
-    fn build_mint_transaction(
+    fn build_transaction<T: BuildStacksTransaction>(
         &self,
-        op: &stacks_node::PegInOp,
-        nonce: u64,
-    ) -> Result<StacksTransaction, Error>;
-    /// Builds a verified signed transaction for a given peg-out request operation
-    fn build_burn_transaction(
-        &self,
-        op: &stacks_node::PegOutRequestOp,
+        op: &T,
         nonce: u64,
     ) -> Result<StacksTransaction, Error>;
     /// Builds a verified signed transaction for setting the sBTC wallet public key
@@ -46,6 +42,8 @@ pub trait StacksWallet {
     fn address(&self) -> &StacksAddress;
     /// Returns the sBTC public key for the wallet
     fn public_key(&self) -> &StacksPublicKey;
+    /// Sets the sBTC transaction fee
+    fn set_fee(&mut self, fee: u64);
 }
 
 pub trait BitcoinWallet {
@@ -68,6 +66,7 @@ pub trait PegWallet {
     type StacksWallet: StacksWallet;
     type BitcoinWallet: BitcoinWallet;
     fn stacks(&self) -> &Self::StacksWallet;
+    fn stacks_mut(&mut self) -> &mut Self::StacksWallet;
     fn bitcoin(&self) -> &Self::BitcoinWallet;
 }
 
@@ -82,6 +81,10 @@ impl PegWallet for WrapPegWallet {
 
     fn stacks(&self) -> &Self::StacksWallet {
         &self.stacks_wallet
+    }
+
+    fn stacks_mut(&mut self) -> &mut Self::StacksWallet {
+        &mut self.stacks_wallet
     }
 
     fn bitcoin(&self) -> &Self::BitcoinWallet {

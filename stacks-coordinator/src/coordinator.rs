@@ -19,17 +19,20 @@ use frost_signer::{
     net::{Error as HttpNetError, HttpNetListen},
 };
 use std::{sync::mpsc::RecvError, thread::sleep, time::Duration};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use wsts::{bip340::SchnorrProof, common::Signature, Scalar};
 
-use crate::config::Config;
-use crate::peg_wallet::{
-    BitcoinWallet as BitcoinWalletTrait, Error as PegWalletError, PegWallet,
-    StacksWallet as StacksWalletTrait, WrapPegWallet,
-};
 use crate::stacks_node::{self, Error as StacksNodeError};
 use crate::stacks_wallet::StacksWallet;
 use crate::{bitcoin_wallet::BitcoinWallet, util::address_version};
+use crate::{config::Config, stacks_node::client::BroadcastError};
+use crate::{
+    peg_wallet::{
+        BitcoinWallet as BitcoinWalletTrait, Error as PegWalletError, PegWallet,
+        StacksWallet as StacksWalletTrait, WrapPegWallet,
+    },
+    stacks_wallet::BuildStacksTransaction,
+};
 
 // Traits in scope
 use crate::bitcoin_node::{
@@ -46,6 +49,12 @@ pub type PublicKey = XOnlyPublicKey;
 
 /// Helper that uses this module's error type
 pub type Result<T> = std::result::Result<T, Error>;
+
+// The max number of nonce retries we should attempt before erroring out
+const MAX_NONCE_RETRIES: u64 = 10;
+
+// The max number of retries for invalid fee's we should attempt before erroring out
+const MAX_FEE_RETRIES: u64 = 2;
 
 /// Kinds of common errors used by stacks coordinator
 #[derive(thiserror::Error, Debug)]
@@ -79,6 +88,10 @@ pub enum Error {
     SigningError(#[from] SighashError),
     #[error("No coordinator set.")]
     NoCoordinator,
+    #[error("Max fee retries exceeded.")]
+    MaxFeeRetriesExceeded,
+    #[error("Max nonce retries exceeded.")]
+    MaxNonceRetriesExceeded,
 }
 
 pub trait Coordinator: Sized {
@@ -126,47 +139,21 @@ pub trait Coordinator: Sized {
 // Private helper functions
 trait CoordinatorHelpers: Coordinator {
     fn peg_in(&mut self, op: stacks_node::PegInOp) -> Result<()> {
-        // Retrieve the nonce from the stacks node using the sBTC wallet address
-        let address = *self.fee_wallet().stacks().address();
-        let nonce = self.stacks_node_mut().next_nonce(&address)?;
-
-        // Build a mint transaction using the peg in op and calculated nonce
-        let tx = self
-            .fee_wallet()
-            .stacks()
-            .build_mint_transaction(&op, nonce)?;
-
-        // Broadcast the resulting sBTC transaction to the stacks node
-        self.stacks_node().broadcast_transaction(&tx)?;
-        info!("Broadcasted deposit sBTC transaction: {}", tx.txid());
-
-        Ok(())
+        // Build a transaction from the peg in op and broadcast it to the node with reattempts
+        self.try_broadcast_transaction(&op)
     }
 
     fn peg_out(&mut self, op: stacks_node::PegOutRequestOp) -> Result<()> {
-        // Retrieve the nonce from the stacks node using the sBTC wallet address
-        let address = *self.fee_wallet().stacks().address();
-        let nonce = self.stacks_node_mut().next_nonce(&address)?;
-
         // First build both the sBTC and BTC transactions before attempting to broadcast either of them
         // This ensures that if either of the transactions fail to build, neither of them will be broadcast
-
-        // Build a burn transaction using the peg out request op and calculated nonce
-        let burn_tx = self
-            .fee_wallet()
-            .stacks()
-            .build_burn_transaction(&op, nonce)?;
 
         // Build and sign a fulfilled bitcoin transaction
         let fulfill_tx = self.fulfill_peg_out(&op)?;
 
-        // Broadcast the resulting sBTC transaction to the stacks node
-        self.stacks_node().broadcast_transaction(&burn_tx)?;
-        info!(
-            "Broadcasted withdrawal sBTC transaction: {}",
-            burn_tx.txid()
-        );
-        // Broadcast the resulting BTC transaction to the Bitcoin node
+        // Build a transaction from the peg out request op and broadcast it to the node with reattempts
+        self.try_broadcast_transaction(&op)?;
+
+        // Broadcast the BTC transaction to the Bitcoin node
         self.bitcoin_node().broadcast_transaction(&fulfill_tx)?;
         info!(
             "Broadcasted fulfilled BTC transaction: {}",
@@ -218,6 +205,52 @@ trait CoordinatorHelpers: Coordinator {
         }
         //Return the signed transaction
         Ok(tx)
+    }
+
+    /// Broadcast a transaction to the stacks node, retrying if the nonce is rejected or the fee set too low until a retry limit is reached
+    fn try_broadcast_transaction<T: BuildStacksTransaction>(&mut self, op: &T) -> Result<()> {
+        // Retrieve the nonce from the stacks node using the sBTC wallet address
+        let address = *self.fee_wallet().stacks().address();
+        let mut nonce = self.stacks_node_mut().next_nonce(&address)?;
+        let mut nonce_retries = 0;
+        let mut fee_retries = 0;
+        loop {
+            // Build a transaction using the peg in op and calculated nonce
+            let tx = self.fee_wallet().stacks().build_transaction(op, nonce)?;
+
+            // Broadcast the resulting sBTC transaction to the stacks node
+            match self.stacks_node().broadcast_transaction(&tx) {
+                Err(StacksNodeError::BroadcastError(BroadcastError::ConflictingNonceInMempool)) => {
+                    warn!("Transaction rejected by stacks node due to conflicting nonce in mempool. Stacks node may be falling behind!");
+                    nonce_retries += 1;
+                    if nonce_retries > MAX_NONCE_RETRIES {
+                        return Err(Error::MaxNonceRetriesExceeded);
+                    }
+                    warn!("Incrementing nonce and retrying...");
+                    nonce = self.stacks_node_mut().next_nonce(&address)?;
+                }
+                Err(StacksNodeError::BroadcastError(BroadcastError::FeeTooLow(
+                    expected,
+                    actual,
+                ))) => {
+                    fee_retries += 1;
+                    if fee_retries > MAX_FEE_RETRIES {
+                        return Err(Error::MaxFeeRetriesExceeded);
+                    }
+                    warn!(
+                        "Transaction rejected by stacks node due to provided fee being too low: {}",
+                        actual
+                    );
+                    warn!("Incrementing fee to {} and retrying...", expected);
+                    self.fee_wallet_mut().stacks_mut().set_fee(expected);
+                }
+                Err(e) => return Err(e.into()),
+                Ok(_) => {
+                    info!("Broadcasted sBTC transaction: {}", tx.txid());
+                    return Ok(());
+                }
+            }
+        }
     }
 }
 
