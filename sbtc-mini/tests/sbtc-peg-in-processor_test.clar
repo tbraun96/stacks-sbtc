@@ -37,6 +37,8 @@
 (define-constant mock-wtxid-1 0x94a60ceec0be7c17b0b6d924b8c8aea8be49c003d32b831e256d035356b253b8)
 (define-constant mock-txid-1 0xf07c86721f795087e2975df2b42ea04e4f34248108fbb225872f8ec9d1914cc7)
 
+(define-constant mock-witness-index-1 u0)
+
 (define-constant mock-wtxid-1-le 0xb853b25653036d251e832bd303c049bea8aec8b824d9b6b0177cbec0ee0ca694)
 (define-constant mock-txid-1-le 0xc74c91d1c98e2f8725b2fb088124344f4ea02eb4f25d97e28750791f72867cf0)
 
@@ -114,6 +116,7 @@
 			(list mock-coinbase-wtxid-1) ;; wproof
 			mock-witness-root-hash-1-le
 			mock-coinbase-witness-reserved-data
+			mock-witness-index-1
 			mock-coinbase-tx-1 ;; ctx
 			;; FIXME: something strange here, can pass any buff in the list and the test will pass.
 			(list mock-txid-1) ;; cproof
@@ -137,6 +140,7 @@
 			(list mock-coinbase-wtxid-1) ;; wproof
 			mock-witness-root-hash-1-le
 			mock-coinbase-witness-reserved-data
+			mock-witness-index-1
 			mock-coinbase-tx-1 ;; ctx
 			;; FIXME: something strange here, can pass any buff in the list and the test will pass.
 			(list mock-txid-1) ;; cproof
@@ -151,6 +155,7 @@
 			(list mock-coinbase-wtxid-1) ;; wproof
 			mock-witness-root-hash-1-le
 			mock-coinbase-witness-reserved-data
+			mock-witness-index-1
 			mock-coinbase-tx-1 ;; ctx
 			;; FIXME: something strange here, can pass any buff in the list and the test will pass.
 			(list mock-txid-1) ;; cproof

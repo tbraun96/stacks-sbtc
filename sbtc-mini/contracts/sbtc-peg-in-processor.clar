@@ -24,16 +24,16 @@
 )
 
 ;; Bitcoin transactions must only contain one reveal per transaction.
-(define-read-only (extract-peg-wallet-vout-value (outs (list 8 { value: uint, scriptPubKey: (buff 128) })) (peg-wallet-scriptpubkey (buff 128)))
+(define-read-only (extract-peg-wallet-value (outs (list 8 { value: uint, scriptPubKey: (buff 128) })) (peg-wallet-scriptpubkey (buff 128)))
 	(begin
-		(match (element-at? outs u0) out (asserts! (not (is-eq (get scriptPubKey out) peg-wallet-scriptpubkey)) (some {n: u0, value: (get value out)})) false)
-		(match (element-at? outs u1) out (asserts! (not (is-eq (get scriptPubKey out) peg-wallet-scriptpubkey)) (some {n: u1, value: (get value out)})) false)
-		(match (element-at? outs u2) out (asserts! (not (is-eq (get scriptPubKey out) peg-wallet-scriptpubkey)) (some {n: u2, value: (get value out)})) false)
-		(match (element-at? outs u3) out (asserts! (not (is-eq (get scriptPubKey out) peg-wallet-scriptpubkey)) (some {n: u3, value: (get value out)})) false)
-		(match (element-at? outs u4) out (asserts! (not (is-eq (get scriptPubKey out) peg-wallet-scriptpubkey)) (some {n: u4, value: (get value out)})) false)
-		(match (element-at? outs u5) out (asserts! (not (is-eq (get scriptPubKey out) peg-wallet-scriptpubkey)) (some {n: u5, value: (get value out)})) false)
-		(match (element-at? outs u6) out (asserts! (not (is-eq (get scriptPubKey out) peg-wallet-scriptpubkey)) (some {n: u6, value: (get value out)})) false)
-		(match (element-at? outs u7) out (asserts! (not (is-eq (get scriptPubKey out) peg-wallet-scriptpubkey)) (some {n: u7, value: (get value out)})) false)
+		(match (element-at? outs u0) out (asserts! (not (is-eq (get scriptPubKey out) peg-wallet-scriptpubkey)) (some (get value out))) false)
+		(match (element-at? outs u1) out (asserts! (not (is-eq (get scriptPubKey out) peg-wallet-scriptpubkey)) (some (get value out))) false)
+		(match (element-at? outs u2) out (asserts! (not (is-eq (get scriptPubKey out) peg-wallet-scriptpubkey)) (some (get value out))) false)
+		(match (element-at? outs u3) out (asserts! (not (is-eq (get scriptPubKey out) peg-wallet-scriptpubkey)) (some (get value out))) false)
+		(match (element-at? outs u4) out (asserts! (not (is-eq (get scriptPubKey out) peg-wallet-scriptpubkey)) (some (get value out))) false)
+		(match (element-at? outs u5) out (asserts! (not (is-eq (get scriptPubKey out) peg-wallet-scriptpubkey)) (some (get value out))) false)
+		(match (element-at? outs u6) out (asserts! (not (is-eq (get scriptPubKey out) peg-wallet-scriptpubkey)) (some (get value out))) false)
+		(match (element-at? outs u7) out (asserts! (not (is-eq (get scriptPubKey out) peg-wallet-scriptpubkey)) (some (get value out))) false)
 		none
 	)
 )
@@ -48,6 +48,7 @@
 	(wproof (list 14 (buff 32)))
 	(witness-merkle-root (buff 32))
 	(witness-reserved-data (buff 32))
+	(witness-input-index uint)
 	(ctx (buff 1024))
 	(cproof (list 14 (buff 32)))
 	)
@@ -55,15 +56,13 @@
 		;; Check if the tx was mined and get the parsed tx.
 		(burn-tx (try! (contract-call? .sbtc-btc-tx-helper was-segwit-tx-mined burn-height tx header tx-index tree-depth wproof witness-merkle-root witness-reserved-data ctx cproof)))
 		(burn-wtxid (get txid burn-tx))
-		;;(value (unwrap! (extract-peg-wallet-value (get outs burn-tx) (unwrap! (get-current-peg-scriptpubkey) err-not-a-peg-wallet)) err-peg-value-not-found))
-		;; Extract the vout index and value. (TODO: should get current peg scriptpubkey based on burn height.)
-		(vout-value (unwrap! (extract-peg-wallet-vout-value (get outs burn-tx) (unwrap! (contract-call? .sbtc-btc-tx-helper get-peg-wallet-scriptpubkey (some cycle)) err-not-a-peg-wallet)) err-peg-value-not-found))
+		;; Extract the value sent to the peg wallet (must be a single output)
+		(value (unwrap! (extract-peg-wallet-value (get outs burn-tx) (unwrap! (contract-call? .sbtc-btc-tx-helper get-peg-wallet-scriptpubkey (some cycle)) err-not-a-peg-wallet)) err-peg-value-not-found))
 		;; Find the protocol unlock witness script (TODO: can inline this let var)
 		;; It also checks if the protocol opcode and version byte are correct (script must start with 0x3c00).
-		(unlock-script (unwrap! (contract-call? .sbtc-btc-tx-helper find-protocol-unlock-witness (unwrap! (element-at? (get witnesses burn-tx) (get n vout-value)) err-missing-witness)) err-unlock-script-not-found-or-invalid))
+		(unlock-script (unwrap! (contract-call? .sbtc-btc-tx-helper find-protocol-unlock-witness (unwrap! (element-at? (get witnesses burn-tx) witness-input-index) err-missing-witness)) err-unlock-script-not-found-or-invalid))
 		;; extract the destination principal from the unlock script
 		(recipient (unwrap! (extract-principal unlock-script u3) err-invalid-principal)) ;; skip length byte, protocol opcode, version byte
-		(value (get value vout-value))
 		)
 		;; check if the tx has not been processed before and if the
 		;; mined peg-in reached the minimum amount of confirmations.
