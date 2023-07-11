@@ -7,14 +7,13 @@ use serde_json::Value;
 use tracing::{debug, info, warn};
 use url::Url;
 
-use crate::peg_wallet::BitcoinWallet;
 pub trait BitcoinNode {
     /// Broadcast the BTC transaction to the bitcoin node
     fn broadcast_transaction(&self, tx: &BitcoinTransaction) -> Result<Txid, Error>;
     /// Load the Bitcoin wallet from the given address
-    fn load_wallet(&self, address: &impl BitcoinWallet) -> Result<(), Error>;
+    fn load_wallet(&self, address: &bitcoin::Address) -> Result<(), Error>;
     /// Get all utxos from the given address
-    fn list_unspent(&self, address: &impl BitcoinWallet) -> Result<Vec<UTXO>, Error>;
+    fn list_unspent(&self, address: &bitcoin::Address) -> Result<Vec<UTXO>, Error>;
 }
 
 pub type BitcoinTransaction = bitcoin::Transaction;
@@ -86,7 +85,7 @@ impl BitcoinNode for LocalhostBitcoinNode {
         ))
     }
 
-    fn load_wallet(&self, address: &impl BitcoinWallet) -> Result<(), Error> {
+    fn load_wallet(&self, address: &bitcoin::Address) -> Result<(), Error> {
         debug!("Loading bitcoin wallet...");
         let result = self.create_empty_wallet();
         if let Err(Error::RPCError(message)) = &result {
@@ -103,10 +102,10 @@ impl BitcoinNode for LocalhostBitcoinNode {
     }
 
     /// List the UTXOs filtered on a given address.
-    fn list_unspent(&self, wallet: &impl BitcoinWallet) -> Result<Vec<UTXO>, Error> {
+    fn list_unspent(&self, address: &bitcoin::Address) -> Result<Vec<UTXO>, Error> {
         debug!("Retrieving utxos...");
         // Construct the params using defaults found at https://developer.bitcoin.org/reference/rpc/listunspent.html?highlight=listunspent
-        let addresses: Vec<String> = vec![wallet.address().to_string()];
+        let addresses: Vec<String> = vec![address.to_string()];
         let min_conf = 0i64;
         let max_conf = 9999999i64;
         let params = (min_conf, max_conf, addresses);
@@ -215,13 +214,12 @@ impl LocalhostBitcoinNode {
         Ok(())
     }
 
-    fn import_address(&self, wallet: &impl BitcoinWallet) -> Result<(), Error> {
-        debug!("Importing address {}...", wallet.address());
+    fn import_address(&self, address: &bitcoin::Address) -> Result<(), Error> {
+        debug!("Importing address {}...", address);
 
         // Create a descriptor using a Bech32 (segwit) Pay-to-Taproot (P2TR) address.
         let desc = {
-            let pub_hex = hex::encode(wallet.x_only_pub_key().serialize());
-            let descriptor = format!("tr({})", pub_hex);
+            let descriptor = format!("addr({})", address);
             let checksum = calc_checksum(&descriptor)?;
 
             format!("{}#{}", descriptor, checksum)

@@ -2,6 +2,7 @@ use crate::bitcoin_node::UTXO;
 use crate::coordinator::PublicKey;
 use crate::peg_wallet::{BitcoinWallet as BitcoinWalletTrait, Error as PegWalletError};
 use crate::stacks_node::PegOutRequestOp;
+use bitcoin::schnorr::TweakedPublicKey;
 use bitcoin::XOnlyPublicKey;
 use bitcoin::{
     hashes::hex::FromHex, secp256k1::Secp256k1, Address, Network, OutPoint, Script, Transaction,
@@ -28,8 +29,8 @@ pub struct BitcoinWallet {
 
 impl BitcoinWallet {
     pub fn new(public_key: PublicKey, network: Network) -> Self {
-        let secp = Secp256k1::verification_only();
-        let address = bitcoin::Address::p2tr(&secp, public_key, None, network);
+        let tweaked_public_key = TweakedPublicKey::dangerous_assume_tweaked(public_key);
+        let address = bitcoin::Address::p2tr_tweaked(tweaked_public_key, network);
         Self {
             address,
             public_key,

@@ -110,7 +110,7 @@ fn should_load_wallet() {
 
     // Attemp to register the address with the wallet
     let local_btc_node = LocalhostBitcoinNode::new(btcd.url().clone());
-    local_btc_node.load_wallet(&wallet).unwrap();
+    local_btc_node.load_wallet(wallet.address()).unwrap();
     let result = btcd.rpc("listreceivedbyaddress", (0, true, true));
 
     // Check that the address was registered
@@ -143,14 +143,14 @@ fn should_list_unspent() {
     let wallet = BitcoinWallet::new(xonly_pubkey, Network::Regtest);
 
     let local_btc_node = LocalhostBitcoinNode::new(btcd.url().clone());
-    local_btc_node.load_wallet(&wallet).unwrap();
+    local_btc_node.load_wallet(wallet.address()).unwrap();
 
     // Produce some UTXOs for the address
     let _ = mine_and_get_coinbase_txid(&btcd, wallet.address());
     // Produce more blocks to make sure the UTXOs are confirmed
     let _ = mine_and_get_coinbase_txid(&btcd, &wallet.address());
 
-    let utxos = local_btc_node.list_unspent(&wallet).unwrap();
+    let utxos = local_btc_node.list_unspent(wallet.address()).unwrap();
 
     assert!(!utxos.is_empty());
 }
