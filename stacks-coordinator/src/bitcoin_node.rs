@@ -1,7 +1,7 @@
 use std::{borrow::Cow, str::FromStr};
 
 use bdk::descriptor::calc_checksum;
-use bitcoin::{consensus::Encodable, hashes::sha256d::Hash, Txid};
+use bitcoin::{consensus::Encodable, hashes::sha256d::Hash, util::amount::Amount, Txid};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, info, warn};
@@ -276,9 +276,24 @@ impl LocalhostBitcoinNode {
                     "Could not parse scriptPubKey".to_string(),
                 ))?
                 .to_string(),
-            amount: raw["amount"].as_f64().map(|amount| amount as u64).ok_or(
-                Error::InvalidResponseJSON("Could not parse amount".to_string()),
-            )?,
+            amount: raw["amount"]
+                .as_f64()
+                .map_or_else(
+                    || {
+                        Err(Error::InvalidResponseJSON(
+                            "Amount not provided or wrong type".to_string(),
+                        ))
+                    },
+                    |amount| {
+                        Amount::from_btc(amount).map_err(|_e| {
+                            Error::InvalidResponseJSON(format!(
+                                "Could not parse the float {} as a bitcoin amount",
+                                amount
+                            ))
+                        })
+                    },
+                )?
+                .to_sat(),
             confirmations: raw["confirmations"]
                 .as_u64()
                 .ok_or(Error::InvalidResponseJSON(
@@ -324,7 +339,7 @@ mod tests {
     fn should_map_json_to_utxo() {
         let value = json!({
             "address": "bcrt1qykqup0h6ry9x3c89llzpznrvm9nfd7fqwnt0hu",
-            "amount": 50.00000000,
+            "amount": 0.00000050,
             "confirmations": 123,
             "label": "",
             "parent_descs": [],
