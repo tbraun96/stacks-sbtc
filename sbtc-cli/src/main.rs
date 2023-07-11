@@ -38,7 +38,7 @@ enum Command {
 
 #[derive(Parser, Debug, Clone)]
 struct DepositArgs {
-    /// P2WPKH private key in WIF format
+    /// P2WPKH BTC private key in WIF format
     #[clap(short, long)]
     wif: String,
 
@@ -57,9 +57,13 @@ struct DepositArgs {
 
 #[derive(Parser, Debug, Clone)]
 struct WithdrawalArgs {
-    /// P2WPKH private key in WIF format
+    /// P2WPKH BTC private key in WIF format
     #[clap(short, long)]
     wif: String,
+
+    /// P2WPKH sBTC sender private key in WIF format
+    #[clap(short, long)]
+    sender_wif: String,
 
     /// Bitcoin address that will receive BTC
     #[clap(short, long)]
@@ -132,12 +136,13 @@ fn build_withdrawal_tx(withdrawal: &WithdrawalArgs) -> anyhow::Result<()> {
 
     let wallet = setup_wallet(private_key)?;
 
+    let sender_private_key = PrivateKey::from_wif(&withdrawal.sender_wif)?;
     let recipient = BitcoinAddress::from_str(&withdrawal.recipient)?;
     let dkg_address = BitcoinAddress::from_str(&withdrawal.dkg_wallet)?;
 
     let mut psbt = withdrawal_psbt(
         &wallet,
-        &private_key,
+        &sender_private_key,
         &recipient,
         &dkg_address,
         withdrawal.amount,
@@ -217,7 +222,7 @@ fn deposit_psbt(
 
 fn withdrawal_psbt(
     wallet: &Wallet<MemoryDatabase>,
-    private_key: &PrivateKey,
+    sender_private_key: &PrivateKey,
     recipient: &BitcoinAddress,
     dkg_address: &BitcoinAddress,
     amount: u64,
@@ -243,7 +248,7 @@ fn withdrawal_psbt(
         recipient,
         amount,
         fulfillment_fee,
-        private_key,
+        sender_private_key,
         network,
     ));
 
@@ -278,7 +283,7 @@ fn withdrawal_data(
     recipient: &BitcoinAddress,
     amount: u64,
     fulfillment_fee: u64,
-    private_key: &PrivateKey,
+    sender_private_key: &PrivateKey,
     network: &Network,
 ) -> Vec<u8> {
     let mut msg = amount.to_be_bytes().to_vec();
@@ -289,7 +294,7 @@ fn withdrawal_data(
     let msg_ecdsa = Message::from_slice(&msg_hash_bytes).unwrap();
 
     let (recovery_id, signature) = Secp256k1::new()
-        .sign_ecdsa_recoverable(&msg_ecdsa, &private_key.inner)
+        .sign_ecdsa_recoverable(&msg_ecdsa, &sender_private_key.inner)
         .serialize_compact();
 
     magic_bytes(network)
