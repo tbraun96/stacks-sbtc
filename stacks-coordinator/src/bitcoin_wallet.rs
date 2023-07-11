@@ -4,10 +4,7 @@ use crate::peg_wallet::{BitcoinWallet as BitcoinWalletTrait, Error as PegWalletE
 use crate::stacks_node::PegOutRequestOp;
 use bitcoin::schnorr::TweakedPublicKey;
 use bitcoin::XOnlyPublicKey;
-use bitcoin::{
-    hashes::hex::FromHex, secp256k1::Secp256k1, Address, Network, OutPoint, Script, Transaction,
-    TxIn,
-};
+use bitcoin::{hashes::hex::FromHex, Address, Network, OutPoint, Script, Transaction, TxIn};
 use tracing::{debug, warn};
 
 #[derive(thiserror::Error, Debug, PartialEq)]
@@ -98,8 +95,8 @@ impl BitcoinWalletTrait for BitcoinWallet {
             change_amount, total_consumed, op.amount
         );
         if change_amount >= DUST_UTXO_LIMIT {
-            let secp = Secp256k1::verification_only();
-            let script_pubkey = Script::new_v1_p2tr(&secp, self.public_key, None);
+            let public_key_tweaked = TweakedPublicKey::dangerous_assume_tweaked(self.public_key);
+            let script_pubkey = Script::new_v1_p2tr_tweaked(public_key_tweaked);
             let change_output = bitcoin::TxOut {
                 value: change_amount,
                 script_pubkey,
