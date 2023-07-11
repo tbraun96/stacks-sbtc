@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
-use std::iter::{once, repeat};
+use std::iter::once;
 use std::str::FromStr;
 
 use anyhow::anyhow;
@@ -247,7 +247,6 @@ fn withdrawal_psbt(
     let op_return_script = build_op_return_script(&withdrawal_data(
         recipient,
         amount,
-        fulfillment_fee,
         sender_private_key,
         network,
     ));
@@ -282,7 +281,6 @@ fn build_op_return_script(data: &[u8]) -> Script {
 fn withdrawal_data(
     recipient: &BitcoinAddress,
     amount: u64,
-    fulfillment_fee: u64,
     sender_private_key: &PrivateKey,
     network: &Network,
 ) -> Vec<u8> {
@@ -303,9 +301,6 @@ fn withdrawal_data(
         .chain(amount.to_be_bytes())
         .chain(once(recovery_id.to_i32() as u8))
         .chain(signature)
-        .chain(repeat(0))
-        .take(78)
-        .chain(fulfillment_fee.to_be_bytes().to_vec())
         .collect()
 }
 
