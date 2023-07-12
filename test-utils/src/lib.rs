@@ -252,7 +252,7 @@ pub fn generate_wallet(
     let xonly_public_key = keypair.x_only_public_key().0;
     let address = if is_taproot {
         let tweaked_public_key = TweakedPublicKey::dangerous_assume_tweaked(xonly_public_key);
-        bitcoin::Address::p2tr_tweaked(tweaked_public_key, Network::Regtest)
+        Address::p2tr_tweaked(tweaked_public_key, Network::Regtest)
     } else {
         Address::p2wpkh(&public_key, Network::Regtest).unwrap()
     };

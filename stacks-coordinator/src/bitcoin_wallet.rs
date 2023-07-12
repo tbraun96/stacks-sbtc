@@ -1,10 +1,10 @@
 use crate::bitcoin_node::UTXO;
-use crate::coordinator::PublicKey;
 use crate::peg_wallet::{BitcoinWallet as BitcoinWalletTrait, Error as PegWalletError};
 use crate::stacks_node::PegOutRequestOp;
-use bitcoin::schnorr::TweakedPublicKey;
-use bitcoin::XOnlyPublicKey;
-use bitcoin::{hashes::hex::FromHex, Address, Network, OutPoint, Script, Transaction, TxIn};
+use bitcoin::{
+    hashes::hex::FromHex, schnorr::TweakedPublicKey, Address, Network, OutPoint, Script,
+    Transaction, TxIn, XOnlyPublicKey,
+};
 use tracing::{debug, warn};
 
 #[derive(thiserror::Error, Debug, PartialEq)]
@@ -21,22 +21,19 @@ pub enum Error {
 
 pub struct BitcoinWallet {
     address: Address,
-    public_key: PublicKey,
+    public_key: XOnlyPublicKey,
 }
 
 impl BitcoinWallet {
-    pub fn new(public_key: PublicKey, network: Network) -> Self {
+    pub fn new(public_key: XOnlyPublicKey, network: Network) -> Self {
         let tweaked_public_key = TweakedPublicKey::dangerous_assume_tweaked(public_key);
-        let address = bitcoin::Address::p2tr_tweaked(tweaked_public_key, network);
+        let address = Address::p2tr_tweaked(tweaked_public_key, network);
         Self {
             address,
             public_key,
         }
     }
 }
-
-/// Minimum dust required
-const DUST_UTXO_LIMIT: u64 = 5500;
 
 impl BitcoinWalletTrait for BitcoinWallet {
     type Error = Error;
@@ -94,12 +91,14 @@ impl BitcoinWalletTrait for BitcoinWallet {
             "change_amount: {:?}, total_consumed: {:?}, op.amount: {:?}",
             change_amount, total_consumed, op.amount
         );
-        if change_amount >= DUST_UTXO_LIMIT {
-            let public_key_tweaked = TweakedPublicKey::dangerous_assume_tweaked(self.public_key);
-            let script_pubkey = Script::new_v1_p2tr_tweaked(public_key_tweaked);
+        // Do not want to use Script::new_v1_p2tr because it will tweak our key when we don't want it to
+        let public_key_tweaked = TweakedPublicKey::dangerous_assume_tweaked(self.public_key);
+        let script_pubkey = Script::new_v1_p2tr_tweaked(public_key_tweaked);
+
+        if change_amount >= script_pubkey.dust_value().to_sat() {
             let change_output = bitcoin::TxOut {
                 value: change_amount,
-                script_pubkey,
+                script_pubkey: script_pubkey.clone(),
             };
             tx.output.push(change_output);
         } else {
@@ -110,9 +109,14 @@ impl BitcoinWalletTrait for BitcoinWallet {
         let fulfillment_input = utxo_to_input(fulfillment_utxo)?;
         tx.input.push(fulfillment_input);
         for utxo in utxos {
-            let input = utxo_to_input(utxo)?;
-            tx.input.push(input);
+            let withdrawal_input = utxo_to_input(utxo)?;
+            tx.input.push(withdrawal_input);
         }
+        let withdrawal_output = bitcoin::TxOut {
+            value: op.amount,
+            script_pubkey,
+        };
+        tx.output.push(withdrawal_output);
         Ok(tx)
     }
 
@@ -144,18 +148,19 @@ fn utxo_to_input(utxo: UTXO) -> Result<TxIn, Error> {
 mod tests {
     use super::{BitcoinWallet, Error};
     use crate::bitcoin_node::UTXO;
-    use crate::coordinator::PublicKey;
     use crate::peg_wallet::{BitcoinWallet as BitcoinWalletTrait, Error as PegWalletError};
     use crate::util::test::{build_peg_out_request_op, PRIVATE_KEY_HEX};
+    use bitcoin::XOnlyPublicKey;
     use hex::encode;
     use rand::Rng;
     use std::str::FromStr;
 
     /// Helper function to build a valid bitcoin wallet
     fn bitcoin_wallet() -> BitcoinWallet {
-        let public_key =
-            PublicKey::from_str("cc8a4bc64d897bddc5fbc2f670f7a8ba0b386779106cf1223c6fc5d7cd6fc115")
-                .expect("Failed to construct a valid public key for the bitcoin wallet");
+        let public_key = XOnlyPublicKey::from_str(
+            "cc8a4bc64d897bddc5fbc2f670f7a8ba0b386779106cf1223c6fc5d7cd6fc115",
+        )
+        .expect("Failed to construct a valid public key for the bitcoin wallet");
         BitcoinWallet::new(public_key, bitcoin::Network::Testnet)
     }
 
@@ -222,7 +227,7 @@ mod tests {
 
         let btc_tx = wallet.fulfill_peg_out(&op, txouts).unwrap();
         assert_eq!(btc_tx.input.len(), 7);
-        assert_eq!(btc_tx.output.len(), 1); // We have change!
+        assert_eq!(btc_tx.output.len(), 2); // We have change!
         assert_eq!(btc_tx.output[0].value, 10000);
     }
 
@@ -241,7 +246,7 @@ mod tests {
 
         let btc_tx = wallet.fulfill_peg_out(&op, txouts).unwrap();
         assert_eq!(btc_tx.input.len(), 2);
-        assert_eq!(btc_tx.output.len(), 0); // No change!
+        assert_eq!(btc_tx.output.len(), 1); // No change!
     }
 
     #[test]

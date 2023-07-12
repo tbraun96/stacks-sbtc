@@ -1,16 +1,12 @@
 use bitcoin::{
     psbt::Prevouts,
-    secp256k1::Parity,
     util::{
         base58,
         sighash::{Error as SighashError, SighashCache},
     },
-    Network, SchnorrSighashType, XOnlyPublicKey,
+    SchnorrSighashType, XOnlyPublicKey,
 };
-use blockstack_lib::{
-    address::AddressHashMode, chainstate::stacks::TransactionVersion,
-    types::chainstate::StacksAddress, util::secp256k1::Secp256k1PublicKey,
-};
+use blockstack_lib::{types::chainstate::StacksAddress, util::secp256k1::Secp256k1PublicKey};
 use frost_coordinator::{
     coordinator::Error as FrostCoordinatorError, create_coordinator, create_coordinator_from_path,
 };
@@ -20,11 +16,11 @@ use frost_signer::{
 };
 use std::{sync::mpsc::RecvError, thread::sleep, time::Duration};
 use tracing::{debug, info, warn};
-use wsts::{bip340::SchnorrProof, common::Signature, Scalar};
+use wsts::{bip340::SchnorrProof, common::Signature, field::Element, Point, Scalar};
 
+use crate::bitcoin_wallet::BitcoinWallet;
 use crate::stacks_node::{self, Error as StacksNodeError};
 use crate::stacks_wallet::StacksWallet;
-use crate::{bitcoin_wallet::BitcoinWallet, util::address_version};
 use crate::{config::Config, stacks_node::client::BroadcastError};
 use crate::{
     peg_wallet::{
@@ -44,8 +40,6 @@ use crate::peg_queue::{
 use crate::stacks_node::{client::NodeClient, StacksNode};
 
 type FrostCoordinator = frost_coordinator::coordinator::Coordinator<HttpNetListen>;
-
-pub type PublicKey = XOnlyPublicKey;
 
 /// Helper that uses this module's error type
 pub type Result<T> = std::result::Result<T, Error>;
@@ -92,6 +86,8 @@ pub enum Error {
     MaxFeeRetriesExceeded,
     #[error("Max nonce retries exceeded.")]
     MaxNonceRetriesExceeded,
+    #[error("Point error: {0}")]
+    PointError(String),
 }
 
 pub trait Coordinator: Sized {
@@ -270,9 +266,10 @@ pub struct StacksCoordinator {
 }
 
 impl StacksCoordinator {
-    pub fn run_dkg_round(&mut self) -> Result<PublicKey> {
+    pub fn run_dkg_round(&mut self) -> Result<XOnlyPublicKey> {
         let p = self.frost_coordinator.run_distributed_key_generation()?;
-        PublicKey::from_slice(&p.x().to_bytes()).map_err(|e| Error::InvalidPublicKey(e.to_string()))
+        XOnlyPublicKey::from_slice(&p.x().to_bytes())
+            .map_err(|e| Error::InvalidPublicKey(e.to_string()))
     }
 
     pub fn sign_message(&mut self, message: &str) -> Result<(Signature, SchnorrProof)> {
@@ -306,26 +303,15 @@ fn create_frost_coordinator_from_path(
         // so that subsequent runs of the coordinator don't need to load the data from a file again
         // until a stacking cyle has finished and a new signing set and coordinator are generated.
         debug!("loading coordinator data into sBTC contract...");
-        let version = if config.bitcoin_network == Network::Testnet {
-            TransactionVersion::Testnet
-        } else {
-            TransactionVersion::Mainnet
-        };
-        let public_key = Secp256k1PublicKey::from_slice(&coordinator.public_key().to_bytes())
-            .map_err(|e| Error::InvalidPublicKey(e.to_string()))?;
-        let address = StacksAddress::from_public_keys(
-            address_version(&version),
-            &AddressHashMode::SerializeP2PKH,
-            1,
-            &vec![public_key],
-        )
-        .ok_or(Error::InvalidPublicKey(
-            "Failed to generate stacks address from coordinator public key.".to_string(),
-        ))?;
-
         let nonce = stacks_node.next_nonce(&config.stacks_address)?;
-        let coordinator_tx =
-            stacks_wallet.build_set_coordinator_data_transaction(&address, &public_key, nonce)?;
+        let coordinator_public_key =
+            Secp256k1PublicKey::from_slice(&coordinator.public_key().to_bytes())
+                .map_err(|e| Error::InvalidPublicKey(e.to_string()))?;
+        let coordinator_tx = stacks_wallet.build_set_coordinator_data_transaction(
+            &config.stacks_address,
+            &coordinator_public_key,
+            nonce,
+        )?;
         stacks_node.broadcast_transaction(&coordinator_tx)?;
     }
     Ok(coordinator)
@@ -384,26 +370,25 @@ fn bitcoin_public_key(
     stacks_node: &mut NodeClient,
     stacks_wallet: &StacksWallet,
     address: &StacksAddress,
-) -> Result<PublicKey> {
+) -> Result<XOnlyPublicKey> {
     debug!("Retrieving bitcoin wallet public key from sBTC contract...");
-    if let Some(public_key) = stacks_node.bitcoin_wallet_public_key(address)? {
-        Ok(public_key)
+    if let Some(xonly_pubkey) = stacks_node.bitcoin_wallet_public_key(address)? {
+        // We have to set the frost_coordinator aggregate key
+        frost_coordinator.set_aggregate_public_key(
+            Point::lift_x(&Element::from(xonly_pubkey.serialize()))
+                .map_err(|e| Error::PointError(format!("{:?}", e)))?,
+        );
+        Ok(xonly_pubkey)
     } else {
         // If we don't get one stored in the contract...run the DKG round and get the resulting public key and use that
         let point = frost_coordinator.run_distributed_key_generation()?;
-        let xonly_pubkey = PublicKey::from_slice(&point.x().to_bytes())
+        let xonly_pubkey = XOnlyPublicKey::from_slice(&point.x().to_bytes())
             .map_err(|e| Error::InvalidPublicKey(e.to_string()))?;
-        let parity = if point.has_even_y() {
-            Parity::Even
-        } else {
-            Parity::Odd
-        };
-        let public_key = xonly_pubkey.public_key(parity);
 
         // Set the bitcoin address using the sbtc contract
         let nonce = stacks_node.next_nonce(address)?;
         let tx =
-            stacks_wallet.build_set_bitcoin_wallet_public_key_transaction(&public_key, nonce)?;
+            stacks_wallet.build_set_bitcoin_wallet_public_key_transaction(&xonly_pubkey, nonce)?;
         stacks_node.broadcast_transaction(&tx)?;
         Ok(xonly_pubkey)
     }

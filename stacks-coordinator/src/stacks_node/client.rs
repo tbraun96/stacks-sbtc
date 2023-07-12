@@ -409,14 +409,13 @@ impl StacksNode for NodeClient {
             if let Some(ClarityValue::Sequence(SequenceData::Buffer(public_key))) =
                 optional_data.data.map(|boxed| *boxed)
             {
-                let public_key =
-                    bitcoin::PublicKey::from_slice(&public_key.data).map_err(|_| {
-                        StacksNodeError::MalformedClarityValue(
-                            function_name.to_string(),
-                            bitcoin_wallet_public_key,
-                        )
-                    })?;
-                return Ok(Some(public_key.inner.x_only_public_key().0));
+                let xonly_pubkey = XOnlyPublicKey::from_slice(&public_key.data).map_err(|_| {
+                    StacksNodeError::MalformedClarityValue(
+                        function_name.to_string(),
+                        bitcoin_wallet_public_key,
+                    )
+                })?;
+                return Ok(Some(xonly_pubkey));
             } else {
                 return Ok(None);
             }

@@ -3,7 +3,7 @@ use crate::{
     stacks_node::{PegInOp, PegOutRequestOp},
     util::address_version,
 };
-use bitcoin::secp256k1::PublicKey;
+use bitcoin::XOnlyPublicKey;
 use blockstack_lib::{
     chainstate::stacks::{
         StacksTransaction, StacksTransactionSigner, TransactionAnchorMode, TransactionAuth,
@@ -213,7 +213,7 @@ impl StacksWalletTrait for StacksWallet {
     }
     fn build_set_bitcoin_wallet_public_key_transaction(
         &self,
-        public_key: &PublicKey,
+        public_key: &XOnlyPublicKey,
         nonce: u64,
     ) -> Result<StacksTransaction, PegWalletError> {
         let function_name = "set-bitcoin-wallet-public-key";
@@ -270,7 +270,7 @@ mod tests {
             test::{build_peg_out_request_op, PRIVATE_KEY_HEX, PUBLIC_KEY_HEX},
         },
     };
-    use bitcoin::{secp256k1::Parity, XOnlyPublicKey};
+    use bitcoin::XOnlyPublicKey;
     use blockstack_lib::{
         address::{AddressHashMode, C32_ADDRESS_VERSION_TESTNET_SINGLESIG},
         burnchains::{Address, Txid},
@@ -384,11 +384,10 @@ mod tests {
     #[test]
     fn build_set_bitcoin_wallet_public_key_transaction_test() {
         let wallet = stacks_wallet();
-        let internal_key = XOnlyPublicKey::from_str(PUBLIC_KEY_HEX).unwrap();
-        let public_key = internal_key.public_key(Parity::Even);
+        let xonly_pubkey = XOnlyPublicKey::from_str(PUBLIC_KEY_HEX).unwrap();
 
         let tx = wallet
-            .build_set_bitcoin_wallet_public_key_transaction(&public_key, 0)
+            .build_set_bitcoin_wallet_public_key_transaction(&xonly_pubkey, 0)
             .expect("Failed to construct a set btc address transaction.");
         tx.verify().expect(
             "build_set_btc_address_transaction generated a transaction with an invalid signature.",
