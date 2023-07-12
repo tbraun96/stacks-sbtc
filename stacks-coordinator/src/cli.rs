@@ -11,6 +11,7 @@ pub struct Cli {
 
     /// Optional starting block height to use.
     /// Will override any listed value within the config file
+    /// Must be greater than 0.
     #[arg(short = 'b', long)]
     pub start_block_height: Option<u64>,
 

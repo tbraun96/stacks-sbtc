@@ -489,14 +489,13 @@ impl TryFrom<&Config> for StacksCoordinator {
         local_bitcoin_node.load_wallet(bitcoin_wallet.address())?;
 
         // If a user has not specified a start block height, begin from the current burn block height by default
-        let start_block_height = config
-            .start_block_height
-            .unwrap_or(local_stacks_node.burn_block_height()?);
+        let start_block_height = config.start_block_height;
+        let current_block_height = local_stacks_node.burn_block_height()?;
         let local_peg_queue = if let Some(path) = &config.data_directory {
             let db_path = PathBuf::from(path).join("peg_queue.sqlite");
-            SqlitePegQueue::new(db_path, start_block_height)
+            SqlitePegQueue::new(db_path, start_block_height, current_block_height)
         } else {
-            SqlitePegQueue::in_memory(start_block_height)
+            SqlitePegQueue::in_memory(start_block_height, current_block_height)
         }?;
 
         Ok(Self {

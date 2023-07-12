@@ -32,27 +32,50 @@ impl From<Error> for rusqlite::Error {
 
 pub struct SqlitePegQueue {
     conn: rusqlite::Connection,
-    start_block_height: u64,
 }
 
 impl SqlitePegQueue {
-    pub fn new<P: AsRef<Path>>(path: P, start_block_height: u64) -> Result<Self, Error> {
-        Self::from_connection(RusqliteConnection::open(path)?, start_block_height)
-    }
-
-    pub fn in_memory(start_block_height: u64) -> Result<Self, Error> {
-        Self::from_connection(RusqliteConnection::open_in_memory()?, start_block_height)
-    }
-
-    fn from_connection(conn: RusqliteConnection, start_block_height: u64) -> Result<Self, Error> {
-        let this = Self {
-            conn,
+    pub fn new<P: AsRef<Path>>(
+        path: P,
+        start_block_height: Option<u64>,
+        current_block_height: u64,
+    ) -> Result<Self, Error> {
+        Self::from_connection(
+            RusqliteConnection::open(path)?,
             start_block_height,
-        };
+            current_block_height,
+        )
+    }
+
+    pub fn in_memory(
+        start_block_height: Option<u64>,
+        current_block_height: u64,
+    ) -> Result<Self, Error> {
+        Self::from_connection(
+            RusqliteConnection::open_in_memory()?,
+            start_block_height,
+            current_block_height,
+        )
+    }
+
+    fn from_connection(
+        conn: RusqliteConnection,
+        start_block_height: Option<u64>,
+        current_block_height: u64,
+    ) -> Result<Self, Error> {
+        let this = Self { conn };
         this.conn
             .execute(Self::create_sbtc_ops_table(), rusqlite::params![])?;
         this.conn
             .execute(Self::create_metadata_table(), rusqlite::params![])?;
+
+        // Prevent overflow by calling saturating sub to ensure we don't go below 0
+        if let Some(start_block_height) = start_block_height {
+            this.insert_last_processed_block_height(start_block_height.saturating_sub(1))?;
+        } else if this.last_processed_block_height().is_err() {
+            // If we don't have a last processed block height, set it to the current block height
+            this.insert_last_processed_block_height(current_block_height.saturating_sub(1))?;
+        }
         Ok(this)
     }
 
@@ -223,10 +246,7 @@ impl PegQueue for SqlitePegQueue {
 
     fn poll<N: StacksNode>(&self, stacks_node: &N) -> Result<(), PegQueueError> {
         let target_block_height = stacks_node.burn_block_height()?;
-        let start_block_height = self
-            .last_processed_block_height()
-            .map(|count| count + 1)
-            .unwrap_or(self.start_block_height);
+        let start_block_height = self.last_processed_block_height().map(|count| count + 1)?;
 
         if start_block_height > target_block_height {
             info!("No new blocks to process");
@@ -363,7 +383,7 @@ mod tests {
 
     #[test]
     fn calling_sbtc_op_should_return_new_peg_ops() {
-        let peg_queue = SqlitePegQueue::in_memory(1).unwrap();
+        let peg_queue = SqlitePegQueue::in_memory(Some(1), 2).unwrap();
         let number_of_simulated_blocks: u64 = 3;
 
         let stacks_node_mock = default_stacks_node_mock(number_of_simulated_blocks);
@@ -387,7 +407,7 @@ mod tests {
 
     #[test]
     fn calling_poll_should_not_query_new_ops_if_at_block_height() {
-        let peg_queue = SqlitePegQueue::in_memory(1).unwrap();
+        let peg_queue = SqlitePegQueue::in_memory(Some(1), 2).unwrap();
         let number_of_simulated_blocks: u64 = 3;
 
         let stacks_node_mock = default_stacks_node_mock(number_of_simulated_blocks);
@@ -413,7 +433,7 @@ mod tests {
 
     #[test]
     fn calling_poll_should_find_new_ops_if_at_new_block_height() {
-        let peg_queue = SqlitePegQueue::in_memory(1).unwrap();
+        let peg_queue = SqlitePegQueue::in_memory(Some(1), 2).unwrap();
         let number_of_simulated_blocks: u64 = 3;
         let number_of_simulated_blocks_second_poll: u64 = 5;
 
@@ -442,7 +462,7 @@ mod tests {
 
     #[test]
     fn acknowledged_entries_should_have_acknowledge_status() {
-        let peg_queue = SqlitePegQueue::in_memory(1).unwrap();
+        let peg_queue = SqlitePegQueue::in_memory(Some(1), 2).unwrap();
         let number_of_simulated_blocks: u64 = 1;
 
         let stacks_node_mock = default_stacks_node_mock(number_of_simulated_blocks);
@@ -467,7 +487,8 @@ mod tests {
         let initial_node_block_height: u64 = 20;
         let second_poll_node_block_height: u64 = 40;
 
-        let peg_queue = SqlitePegQueue::in_memory(start_block_height).unwrap();
+        let peg_queue =
+            SqlitePegQueue::in_memory(Some(start_block_height), initial_node_block_height).unwrap();
 
         let stacks_node_mock = default_stacks_node_mock(initial_node_block_height);
         peg_queue.poll(&stacks_node_mock).unwrap();
