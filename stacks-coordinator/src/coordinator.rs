@@ -24,7 +24,7 @@ use std::{
     time::Duration,
 };
 use tracing::{debug, info, warn};
-use wsts::{bip340::SchnorrProof, common::Signature, Scalar};
+use wsts::{bip340::SchnorrProof, common::Signature, field::Element, Point, Scalar};
 
 use crate::bitcoin_wallet::BitcoinWallet;
 use crate::stacks_node::{self, Error as StacksNodeError};
@@ -426,7 +426,11 @@ fn load_dkg_data(
         if let Some(data_directory) = data_directory {
             frost_coordinator.set_dkg_public_shares(read_dkg_public_shares(data_directory)?);
         }
-
+        // We have to set the frost_coordinator aggregate key
+        frost_coordinator.set_aggregate_public_key(
+            Point::lift_x(&Element::from(xonly_pubkey.serialize()))
+                .map_err(|e| Error::PointError(format!("{:?}", e)))?,
+        );
         Ok(xonly_pubkey)
     } else {
         // If we don't get one stored in the contract...run the DKG round and get the resulting public key and use that
