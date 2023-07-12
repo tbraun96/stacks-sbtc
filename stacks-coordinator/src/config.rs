@@ -43,7 +43,7 @@ pub struct RawConfig {
     pub frost_dkg_round_id: u64,
     pub signer_config_path: Option<String>,
     pub start_block_height: Option<u64>,
-    pub rusqlite_path: Option<String>,
+    pub data_directory: Option<String>,
     /// The network version we are using ('mainnet' or 'testnet'). Default: 'mainnet'
     pub network: Option<Network>,
     /// The transaction fee in Satoshis used to broadcast transactions to the stacks node
@@ -117,14 +117,13 @@ pub struct Config {
     pub frost_dkg_round_id: u64,
     pub signer_config_path: Option<String>,
     pub start_block_height: Option<u64>,
-    pub rusqlite_path: Option<String>,
+    pub data_directory: Option<String>,
     pub bitcoin_network: bitcoin::Network,
     pub stacks_version: TransactionVersion,
     /// The transaction fee in Satoshis used to broadcast transactions to the stacks node
     pub transaction_fee: u64,
     /// Frost specific config options. Must be specified if signer_config_path is not used
     pub http_relay_url: Option<String>,
-    pub frost_state_file: Option<String>,
     pub network_private_key: Option<String>,
     /// Controls how many seconds to wait between polls
     pub polling_interval: u64,
@@ -169,12 +168,11 @@ impl TryFrom<RawConfig> for Config {
             frost_dkg_round_id: config.frost_dkg_round_id,
             signer_config_path: config.signer_config_path,
             start_block_height: config.start_block_height,
-            rusqlite_path: config.rusqlite_path,
+            data_directory: config.data_directory,
             bitcoin_network,
             stacks_version,
             transaction_fee: config.transaction_fee,
             http_relay_url: config.http_relay_url,
-            frost_state_file: config.frost_state_file,
             network_private_key: config.network_private_key,
             polling_interval: config.polling_interval.unwrap_or(DEFAULT_POLLING_INTERVAL),
         })

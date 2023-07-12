@@ -11,6 +11,7 @@ pub struct Message {
 }
 
 // Http listen/poll with queue (requires mutable access, is configured by passing in HttpNet)
+#[derive(Clone)]
 pub struct HttpNetListen {
     pub net: HttpNet,
     in_queue: Vec<Message>,

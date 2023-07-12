@@ -87,6 +87,26 @@ impl<Network: NetListen> Coordinator<Network> {
             public_key: config.coordinator_public_key,
         })
     }
+
+    pub fn get_aggregate_public_key(&self) -> Result<Point, Error> {
+        if self.aggregate_public_key == Point::default() {
+            Err(Error::NoAggregatePublicKey)
+        } else {
+            Ok(self.aggregate_public_key)
+        }
+    }
+
+    pub fn set_aggregate_public_key(&mut self, public_key: Point) {
+        self.aggregate_public_key = public_key;
+    }
+
+    pub fn get_dkg_public_shares(&self) -> &BTreeMap<u32, DkgPublicShare> {
+        &self.dkg_public_shares
+    }
+
+    pub fn set_dkg_public_shares(&mut self, dkg_public_shares: BTreeMap<u32, DkgPublicShare>) {
+        self.dkg_public_shares = dkg_public_shares;
+    }
 }
 
 impl<Network: NetListen> Coordinator<Network>
@@ -372,18 +392,6 @@ where
         Ok(self.aggregate_public_key)
     }
 
-    pub fn get_aggregate_public_key(&self) -> Result<Point, Error> {
-        if self.aggregate_public_key == Point::default() {
-            Err(Error::NoAggregatePublicKey)
-        } else {
-            Ok(self.aggregate_public_key)
-        }
-    }
-
-    pub fn set_aggregate_public_key(&mut self, public_key: Point) {
-        self.aggregate_public_key = public_key;
-    }
-
     fn wait_for_public_shares(&mut self) -> Result<Point, Error> {
         let mut ids_to_await: HashSet<u32> = (1..=self.total_signers).collect();
 
@@ -521,12 +529,80 @@ mod test {
     }
 
     #[test]
-    fn integration_test() {
-        env::set_var("RUST_LOG", "info");
-        logging::initiate_tracing_subscriber();
+    fn integration_test_frost_coordinator_should_be_able_to_successfully_run_dkg_sign() {
+        let relay_url = "http://127.0.0.1:9776".to_string();
+        let (coordinator_config, coordinator_net_listen) =
+            spawn_processes_and_get_config(relay_url);
 
-        let state_file = "frost.state.bin".to_string();
-        let relay_url = "http://localhost:9776".to_string();
+        let mut coordinator = Coordinator::new(
+            DEVNET_COORDINATOR_ID,
+            &coordinator_config,
+            coordinator_net_listen,
+        )
+        .unwrap();
+
+        coordinator
+            .run(&Command::DkgSign {
+                msg: vec![0, 1, 2, 3],
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn integration_test_frost_coordinator_should_provide_valid_signatures_after_dkg() {
+        let msg = vec![1, 3, 3, 7];
+        let relay_url = "http://127.0.0.1:9777".to_string();
+        let (coordinator_config, coordinator_net_listen) =
+            spawn_processes_and_get_config(relay_url);
+
+        let mut coordinator = Coordinator::new(
+            DEVNET_COORDINATOR_ID,
+            &coordinator_config,
+            coordinator_net_listen,
+        )
+        .unwrap();
+
+        let public_key = coordinator.run_distributed_key_generation().unwrap();
+        let (_, schnorr_proof) = coordinator.sign_message(&msg).unwrap();
+
+        schnorr_proof.verify(&public_key.x(), &msg);
+    }
+
+    #[test]
+    fn integration_test_frost_coordinator_should_provide_valid_signatures_after_restart() {
+        let msg = vec![1, 3, 3, 7];
+        let relay_url = "http://127.0.0.1:9778".to_string();
+        let (coordinator_config, coordinator_net_listen) =
+            spawn_processes_and_get_config(relay_url);
+
+        let mut coordinator = Coordinator::new(
+            DEVNET_COORDINATOR_ID,
+            &coordinator_config,
+            coordinator_net_listen.clone(),
+        )
+        .unwrap();
+
+        let public_key = coordinator.run_distributed_key_generation().unwrap();
+        let dkg_public_shares = coordinator.get_dkg_public_shares().clone();
+
+        let mut coordinator = Coordinator::new(
+            DEVNET_COORDINATOR_ID,
+            &coordinator_config,
+            coordinator_net_listen,
+        )
+        .unwrap();
+
+        coordinator.set_aggregate_public_key(public_key);
+        coordinator.set_dkg_public_shares(dkg_public_shares);
+
+        let (_, schnorr_proof) = coordinator.sign_message(&msg).unwrap();
+
+        schnorr_proof.verify(&public_key.x(), &msg);
+    }
+
+    fn spawn_processes_and_get_config(relay_url: String) -> (Config, HttpNetListen) {
+        env::set_var("RUST_LOG", "info");
+
         let num_signers = parse_env::<u32>("num_signers", 6);
         let keys_per_signer = parse_env::<u32>("keys_per_signer", 3);
         let keys_threshold = parse_env::<u32>("keys_threshold", 15);
@@ -551,7 +627,6 @@ mod test {
             public_keys.clone(),
             signer_key_ids.clone(),
             coordinator_private_key,
-            state_file.clone(),
             relay_url.clone(),
         );
         let signer_configs = signer_private_keys
@@ -563,7 +638,6 @@ mod test {
                     public_keys.clone(),
                     signer_key_ids.clone(),
                     k.clone(),
-                    state_file.clone(),
                     relay_url.clone(),
                 )
             })
@@ -572,7 +646,10 @@ mod test {
         let net: HttpNet = HttpNet::new(relay_url.clone());
         let coordinator_net_listen: HttpNetListen = HttpNetListen::new(net.clone(), vec![]);
 
-        thread::spawn(|| RelayServer::run("127.0.0.1:9776"));
+        thread::spawn(move || {
+            let relay_socket_address = relay_url.strip_prefix("http://").unwrap();
+            RelayServer::run(relay_socket_address)
+        });
 
         for i in 0..num_signers {
             let config = signer_configs[i as usize].clone();
@@ -582,18 +659,6 @@ mod test {
             });
         }
 
-        let mut coordinator = Coordinator::new(
-            DEVNET_COORDINATOR_ID,
-            &coordinator_config,
-            coordinator_net_listen,
-        )
-        .unwrap();
-        let coordinator_handle = thread::spawn(move || {
-            coordinator.run(&Command::DkgSign {
-                msg: vec![0, 1, 2, 3],
-            })
-        });
-
-        coordinator_handle.join().unwrap().unwrap();
+        (coordinator_config, coordinator_net_listen)
     }
 }

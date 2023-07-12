@@ -13,10 +13,18 @@ use frost_coordinator::{
 use frost_signer::{
     config::Config as SignerConfig,
     net::{Error as HttpNetError, HttpNetListen},
+    signing_round::DkgPublicShare,
 };
-use std::{sync::mpsc::RecvError, thread::sleep, time::Duration};
+use std::{
+    collections::BTreeMap,
+    fs::File,
+    path::{Path, PathBuf},
+    sync::mpsc::RecvError,
+    thread::sleep,
+    time::Duration,
+};
 use tracing::{debug, info, warn};
-use wsts::{bip340::SchnorrProof, common::Signature, field::Element, Point, Scalar};
+use wsts::{bip340::SchnorrProof, common::Signature, Scalar};
 
 use crate::bitcoin_wallet::BitcoinWallet;
 use crate::stacks_node::{self, Error as StacksNodeError};
@@ -290,6 +298,7 @@ fn create_frost_coordinator_from_path(
             signer_config_path, e
         ))
     })?;
+
     // Make sure this coordinator data was loaded into the sbtc contract correctly
     let coordinator_data_loaded =
         if let Some(public_key) = stacks_node.coordinator_public_key(&config.stacks_address)? {
@@ -336,7 +345,6 @@ fn create_frost_coordinator_from_contract(
             .as_bytes(),
     )
     .map_err(|_| Error::ConfigError("Invalid network_private_key.".to_string()))?;
-    let frost_state_file = config.frost_state_file.clone().unwrap_or(String::new());
     let http_relay_url = config.http_relay_url.clone().unwrap_or(String::new());
     create_coordinator(&SignerConfig::new(
         keys_threshold.try_into().unwrap(),
@@ -344,7 +352,6 @@ fn create_frost_coordinator_from_contract(
         public_keys,
         signer_key_ids,
         network_private_key,
-        frost_state_file,
         http_relay_url,
     ))
     .map_err(|e| Error::ConfigError(e.to_string()))
@@ -365,7 +372,50 @@ fn create_frost_coordinator(
     }
 }
 
-fn bitcoin_public_key(
+fn read_dkg_public_shares(path: impl AsRef<Path>) -> Result<BTreeMap<u32, DkgPublicShare>> {
+    let dkg_public_shares_path = path.as_ref().join("dkg_public_shares.json");
+
+    serde_json::from_reader(File::open(&dkg_public_shares_path).map_err(|err| {
+        Error::ConfigError(format!(
+            "Unable to open DKG public shares file {}: {}",
+            dkg_public_shares_path.to_str().unwrap_or("Invalid path"),
+            err
+        ))
+    })?)
+    .map_err(|err| Error::ConfigError(format!("Unable to parse DKG public shares JSON: {}", err)))
+}
+
+fn write_dkg_public_shares(
+    path: impl AsRef<Path>,
+    dkg_public_shares: &BTreeMap<u32, DkgPublicShare>,
+) -> Result<()> {
+    let dkg_public_shares_path = path.as_ref().join("dkg_public_shares.json");
+
+    let dkg_public_shares_file = File::options()
+        .create(true)
+        .write(true)
+        .open(&dkg_public_shares_path)
+        .map_err(|err| {
+            Error::ConfigError(format!(
+                "Unable to open DKG public shares file {}: {}",
+                dkg_public_shares_path.to_str().unwrap_or("Invalid path"),
+                err
+            ))
+        })?;
+
+    serde_json::to_writer_pretty(dkg_public_shares_file, dkg_public_shares).map_err(|err| {
+        Error::ConfigError(format!(
+            "Unable to write DKG public shares to file {}: {}",
+            dkg_public_shares_path.to_str().unwrap_or("Invalid path"),
+            err
+        ))
+    })?;
+
+    Ok(())
+}
+
+fn load_dkg_data(
+    data_directory: Option<&str>,
     frost_coordinator: &mut FrostCoordinator,
     stacks_node: &mut NodeClient,
     stacks_wallet: &StacksWallet,
@@ -373,15 +423,19 @@ fn bitcoin_public_key(
 ) -> Result<XOnlyPublicKey> {
     debug!("Retrieving bitcoin wallet public key from sBTC contract...");
     if let Some(xonly_pubkey) = stacks_node.bitcoin_wallet_public_key(address)? {
-        // We have to set the frost_coordinator aggregate key
-        frost_coordinator.set_aggregate_public_key(
-            Point::lift_x(&Element::from(xonly_pubkey.serialize()))
-                .map_err(|e| Error::PointError(format!("{:?}", e)))?,
-        );
+        if let Some(data_directory) = data_directory {
+            frost_coordinator.set_dkg_public_shares(read_dkg_public_shares(data_directory)?);
+        }
+
         Ok(xonly_pubkey)
     } else {
         // If we don't get one stored in the contract...run the DKG round and get the resulting public key and use that
         let point = frost_coordinator.run_distributed_key_generation()?;
+
+        if let Some(data_directory) = data_directory {
+            write_dkg_public_shares(data_directory, frost_coordinator.get_dkg_public_shares())?;
+        }
+
         let xonly_pubkey = XOnlyPublicKey::from_slice(&point.x().to_bytes())
             .map_err(|e| Error::InvalidPublicKey(e.to_string()))?;
 
@@ -417,7 +471,8 @@ impl TryFrom<&Config> for StacksCoordinator {
             create_frost_coordinator(config, &mut local_stacks_node, &stacks_wallet)?;
 
         // Load the public key from either the frost_coordinator or the sBTC contract
-        let xonly_pubkey = bitcoin_public_key(
+        let xonly_pubkey = load_dkg_data(
+            config.data_directory.as_deref(),
             &mut frost_coordinator,
             &mut local_stacks_node,
             &stacks_wallet,
@@ -433,8 +488,9 @@ impl TryFrom<&Config> for StacksCoordinator {
         let start_block_height = config
             .start_block_height
             .unwrap_or(local_stacks_node.burn_block_height()?);
-        let local_peg_queue = if let Some(path) = &config.rusqlite_path {
-            SqlitePegQueue::new(path, start_block_height)
+        let local_peg_queue = if let Some(path) = &config.data_directory {
+            let db_path = PathBuf::from(path).join("peg_queue.sqlite");
+            SqlitePegQueue::new(db_path, start_block_height)
         } else {
             SqlitePegQueue::in_memory(start_block_height)
         }?;

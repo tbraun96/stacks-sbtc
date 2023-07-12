@@ -54,7 +54,6 @@ struct RawSigners {
 struct RawConfig {
     pub http_relay_url: String,
     pub keys_threshold: u32,
-    pub frost_state_file: String,
     pub network_private_key: String,
     signers: Vec<RawSigners>,
     coordinator_public_key: String,
@@ -116,7 +115,6 @@ pub struct PublicKeys {
 pub struct Config {
     pub http_relay_url: String,
     pub keys_threshold: u32,
-    pub frost_state_file: String,
     pub network_private_key: Scalar,
     pub public_keys: PublicKeys,
     pub signer_key_ids: SignerKeyIds,
@@ -132,14 +130,12 @@ impl Config {
         public_keys: PublicKeys,
         signer_key_ids: SignerKeyIds,
         network_private_key: Scalar,
-        frost_state_file: String,
         http_relay_url: String,
     ) -> Config {
         Self {
             keys_threshold,
             coordinator_public_key,
             network_private_key,
-            frost_state_file,
             http_relay_url,
             total_signers: public_keys.signers.len().try_into().unwrap(),
             total_keys: public_keys.key_ids.len().try_into().unwrap(),
@@ -163,7 +159,6 @@ impl TryFrom<&RawConfig> for Config {
             raw_config.public_keys()?,
             raw_config.signer_key_ids(),
             raw_config.network_private_key()?,
-            raw_config.frost_state_file.clone(),
             raw_config.http_relay_url.clone(),
         ))
     }
