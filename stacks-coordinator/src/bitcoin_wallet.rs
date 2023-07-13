@@ -1,6 +1,7 @@
 use crate::bitcoin_node::UTXO;
 use crate::peg_wallet::{BitcoinWallet as BitcoinWalletTrait, Error as PegWalletError};
 use crate::stacks_node::PegOutRequestOp;
+use bitcoin::TxOut;
 use bitcoin::{
     hashes::hex::FromHex, schnorr::TweakedPublicKey, Address, Network, OutPoint, Script,
     Transaction, TxIn, XOnlyPublicKey,
@@ -13,6 +14,8 @@ pub enum Error {
     InsufficientFunds,
     #[error("Invalid unspent transaction id: {0}")]
     InvalidTransactionID(String),
+    #[error("Invalid unspent transaction script pub key: {0}")]
+    InvalidScriptPubKey(String),
     #[error("Missing peg-out fulfillment utxo.")]
     MissingFulfillmentUTXO,
     #[error("Fulfillment UTXO amount does not equal the fulfillment fee.")]
@@ -41,7 +44,7 @@ impl BitcoinWalletTrait for BitcoinWallet {
         &self,
         op: &PegOutRequestOp,
         available_utxos: Vec<UTXO>,
-    ) -> Result<Transaction, PegWalletError> {
+    ) -> Result<(Transaction, Vec<TxOut>), PegWalletError> {
         // Create an empty transaction
         let mut tx = Transaction {
             version: 2,
@@ -51,8 +54,8 @@ impl BitcoinWalletTrait for BitcoinWallet {
         };
         // Consume UTXOs until we have enough to cover the total spend (fulfillment fee and peg out amount)
         let mut total_consumed = 0;
-        let mut utxos = vec![];
-        let mut fulfillment_utxo = None;
+        let mut prevouts = vec![];
+        let mut found_fulfillment_utxo = false;
         for utxo in available_utxos.into_iter() {
             if utxo.txid == op.txid.to_string() && utxo.vout == 2 {
                 // This is the fulfillment utxo.
@@ -61,11 +64,14 @@ impl BitcoinWalletTrait for BitcoinWallet {
                     // Malformed Peg Request Op
                     return Err(PegWalletError::from(Error::MismatchedFulfillmentFee));
                 }
-                fulfillment_utxo = Some(utxo);
+                tx.input.push(utxo_to_input(&utxo)?);
+                prevouts.push(utxo_to_output(&utxo)?);
+                found_fulfillment_utxo = true;
             } else if total_consumed < op.amount {
                 total_consumed += utxo.amount;
-                utxos.push(utxo);
-            } else if fulfillment_utxo.is_some() {
+                tx.input.push(utxo_to_input(&utxo)?);
+                prevouts.push(utxo_to_output(&utxo)?);
+            } else if found_fulfillment_utxo {
                 // We have consumed enough to cover the total spend
                 // i.e. have found the fulfillment utxo and covered the peg out amount
                 break;
@@ -73,10 +79,10 @@ impl BitcoinWalletTrait for BitcoinWallet {
         }
         // Sanity check all the things!
         // If we did not find the fulfillment utxo, something went wrong
-        let fulfillment_utxo = fulfillment_utxo.ok_or_else(|| {
+        if !found_fulfillment_utxo {
             warn!("Failed to find fulfillment utxo.");
-            Error::MissingFulfillmentUTXO
-        })?;
+            return Err(PegWalletError::from(Error::MissingFulfillmentUTXO));
+        }
         // Check that we have sufficient funds and didn't just run out of available utxos.
         if total_consumed < op.amount {
             warn!(
@@ -85,6 +91,7 @@ impl BitcoinWalletTrait for BitcoinWallet {
             );
             return Err(PegWalletError::from(Error::InsufficientFunds));
         }
+
         // Get the transaction change amount
         let change_amount = total_consumed - op.amount;
         debug!(
@@ -105,19 +112,12 @@ impl BitcoinWalletTrait for BitcoinWallet {
             // Instead of leaving that change to the BTC miner, we could / should bump the sortition fee
             debug!("Not enough change to clear dust limit. Not adding change address.");
         }
-        // Convert the utxos to inputs for the transaction, ensuring the fulfillment utxo is the first input
-        let fulfillment_input = utxo_to_input(fulfillment_utxo)?;
-        tx.input.push(fulfillment_input);
-        for utxo in utxos {
-            let withdrawal_input = utxo_to_input(utxo)?;
-            tx.input.push(withdrawal_input);
-        }
         let withdrawal_output = bitcoin::TxOut {
             value: op.amount,
             script_pubkey,
         };
         tx.output.push(withdrawal_output);
-        Ok(tx)
+        Ok((tx, prevouts))
     }
 
     fn address(&self) -> &Address {
@@ -130,11 +130,11 @@ impl BitcoinWalletTrait for BitcoinWallet {
 }
 
 // Helper function to convert a utxo to an unsigned input
-fn utxo_to_input(utxo: UTXO) -> Result<TxIn, Error> {
+fn utxo_to_input(utxo: &UTXO) -> Result<TxIn, Error> {
     let input = TxIn {
         previous_output: OutPoint {
             txid: bitcoin::Txid::from_hex(&utxo.txid)
-                .map_err(|_| Error::InvalidTransactionID(utxo.txid))?,
+                .map_err(|_| Error::InvalidTransactionID(utxo.txid.clone()))?,
             vout: utxo.vout,
         },
         script_sig: Default::default(),
@@ -142,6 +142,18 @@ fn utxo_to_input(utxo: UTXO) -> Result<TxIn, Error> {
         witness: Default::default(),
     };
     Ok(input)
+}
+
+// Helper function to convert a utxo to an output
+fn utxo_to_output(utxo: &UTXO) -> Result<TxOut, Error> {
+    let output = TxOut {
+        value: utxo.amount,
+        script_pubkey: Script::from(
+            hex::decode(&utxo.scriptPubKey)
+                .map_err(|_| Error::InvalidScriptPubKey(utxo.scriptPubKey.clone()))?,
+        ),
+    };
+    Ok(output)
 }
 
 #[cfg(test)]
@@ -225,7 +237,7 @@ mod tests {
         let fulfillment_utxo = build_utxo(op.txid.to_string(), 2, 1);
         txouts.push(fulfillment_utxo);
 
-        let btc_tx = wallet.fulfill_peg_out(&op, txouts).unwrap();
+        let (btc_tx, _) = wallet.fulfill_peg_out(&op, txouts).unwrap();
         assert_eq!(btc_tx.input.len(), 7);
         assert_eq!(btc_tx.output.len(), 2); // We have change!
         assert_eq!(btc_tx.output[0].value, 10000);
@@ -244,7 +256,7 @@ mod tests {
         let fulfillment_utxo = build_utxo(op.txid.to_string(), 2, 1);
         txouts.push(fulfillment_utxo);
 
-        let btc_tx = wallet.fulfill_peg_out(&op, txouts).unwrap();
+        let (btc_tx, _) = wallet.fulfill_peg_out(&op, txouts).unwrap();
         assert_eq!(btc_tx.input.len(), 2);
         assert_eq!(btc_tx.output.len(), 1); // No change!
     }

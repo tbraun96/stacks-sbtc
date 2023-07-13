@@ -4,8 +4,8 @@ use crate::stacks_node::PegOutRequestOp;
 use crate::stacks_wallet::{
     BuildStacksTransaction, Error as StacksWalletError, StacksWallet as StacksWalletStruct,
 };
-use bitcoin::Address as BitcoinAddress;
 use bitcoin::XOnlyPublicKey;
+use bitcoin::{Address as BitcoinAddress, TxOut};
 use blockstack_lib::{
     chainstate::stacks::StacksTransaction,
     types::chainstate::{StacksAddress, StacksPublicKey},
@@ -56,7 +56,7 @@ pub trait BitcoinWallet {
         &self,
         op: &PegOutRequestOp,
         txouts: Vec<UTXO>,
-    ) -> Result<bitcoin_node::BitcoinTransaction, Error>;
+    ) -> Result<(bitcoin_node::BitcoinTransaction, Vec<TxOut>), Error>;
 
     /// Returns the BTC address for the wallet
     fn address(&self) -> &BitcoinAddress;

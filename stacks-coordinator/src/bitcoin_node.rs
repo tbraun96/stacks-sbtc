@@ -37,7 +37,7 @@ pub enum Error {
 }
 
 #[allow(non_snake_case)]
-#[derive(Debug, Deserialize, Serialize, Default, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Default, PartialEq, Eq, Clone)]
 pub struct UTXO {
     pub txid: String,
     pub vout: u32,

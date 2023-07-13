@@ -489,7 +489,6 @@ mod test {
 
     use frost_signer::{
         config::{Config, PublicKeys, SignerKeyIds},
-        logging,
         net::{HttpNet, HttpNetListen},
         signer::Signer,
     };

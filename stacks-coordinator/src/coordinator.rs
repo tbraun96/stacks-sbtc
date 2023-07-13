@@ -173,35 +173,28 @@ trait CoordinatorHelpers: Coordinator {
             .list_unspent(self.fee_wallet().bitcoin().address())?;
 
         // Build unsigned fulfilled peg out transaction
-        let mut tx = self.fee_wallet().bitcoin().fulfill_peg_out(op, utxos)?;
-
+        let (mut tx, prevouts) = self.fee_wallet().bitcoin().fulfill_peg_out(op, utxos)?;
+        let sighash_tx = tx.clone();
+        let mut sighash_cache = SighashCache::new(&sighash_tx);
         // Sign the transaction
         for index in 0..tx.input.len() {
-            let mut comp = SighashCache::new(&tx);
-
-            let taproot_sighash = comp
-                .taproot_signature_hash(
+            let taproot_sighash = sighash_cache
+                .taproot_key_spend_signature_hash(
                     index,
-                    &Prevouts::All(&tx.output),
-                    None,
-                    None,
-                    SchnorrSighashType::All,
+                    &Prevouts::All(&prevouts),
+                    SchnorrSighashType::Default,
                 )
                 .map_err(Error::SigningError)?;
             let (_frost_sig, schnorr_proof) = self
                 .frost_coordinator_mut()
-                .sign_message(&taproot_sighash)?;
+                .sign_message(&taproot_sighash.as_hash())?;
 
             debug!(
                 "Fulfill Tx {:?} SchnorrProof ({},{})",
                 &tx, schnorr_proof.r, schnorr_proof.s
             );
 
-            let finalized = [
-                schnorr_proof.to_bytes().as_ref(),
-                &[SchnorrSighashType::All as u8],
-            ]
-            .concat();
+            let finalized = schnorr_proof.to_bytes();
             let finalized_b58 = base58::encode_slice(&finalized);
             debug!("CALC SIG ({}) {}", finalized.len(), finalized_b58);
 
