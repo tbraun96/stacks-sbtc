@@ -1,10 +1,13 @@
+use std::iter::repeat;
+
 use crate::bitcoin_node::UTXO;
 use crate::peg_wallet::{BitcoinWallet as BitcoinWalletTrait, Error as PegWalletError};
 use crate::stacks_node::PegOutRequestOp;
+use bitcoin::blockdata::opcodes;
 use bitcoin::TxOut;
 use bitcoin::{
-    hashes::hex::FromHex, schnorr::TweakedPublicKey, Address, Network, OutPoint, Script,
-    Transaction, TxIn, XOnlyPublicKey,
+    blockdata::script, hashes::hex::FromHex, schnorr::TweakedPublicKey, Address, Network, OutPoint,
+    Script, Transaction, TxIn, XOnlyPublicKey,
 };
 use tracing::{debug, warn};
 
@@ -102,21 +105,25 @@ impl BitcoinWalletTrait for BitcoinWallet {
         let public_key_tweaked = TweakedPublicKey::dangerous_assume_tweaked(self.public_key);
         let script_pubkey = Script::new_v1_p2tr_tweaked(public_key_tweaked);
 
+        tx.output.push(withdrawal_data_output());
+
+        let withdrawal_output = bitcoin::TxOut {
+            value: op.amount,
+            script_pubkey: script_pubkey.clone(),
+        };
+        tx.output.push(withdrawal_output);
+
         if change_amount >= script_pubkey.dust_value().to_sat() {
             let change_output = bitcoin::TxOut {
                 value: change_amount,
-                script_pubkey: script_pubkey.clone(),
+                script_pubkey,
             };
             tx.output.push(change_output);
         } else {
             // Instead of leaving that change to the BTC miner, we could / should bump the sortition fee
             debug!("Not enough change to clear dust limit. Not adding change address.");
         }
-        let withdrawal_output = bitcoin::TxOut {
-            value: op.amount,
-            script_pubkey,
-        };
-        tx.output.push(withdrawal_output);
+
         Ok((tx, prevouts))
     }
 
@@ -126,6 +133,24 @@ impl BitcoinWalletTrait for BitcoinWallet {
 
     fn x_only_pub_key(&self) -> &XOnlyPublicKey {
         &self.public_key
+    }
+}
+
+fn withdrawal_data_output() -> TxOut {
+    let data: Vec<u8> = [b'T', b'2', b'!']
+        .into_iter()
+        .chain(repeat(b'.'))
+        .take(35)
+        .collect();
+
+    let script_pubkey = script::Builder::new()
+        .push_opcode(opcodes::all::OP_RETURN)
+        .push_slice(&data)
+        .into_script();
+
+    bitcoin::TxOut {
+        value: 0,
+        script_pubkey,
     }
 }
 
@@ -239,8 +264,9 @@ mod tests {
 
         let (btc_tx, _) = wallet.fulfill_peg_out(&op, txouts).unwrap();
         assert_eq!(btc_tx.input.len(), 7);
-        assert_eq!(btc_tx.output.len(), 2); // We have change!
-        assert_eq!(btc_tx.output[0].value, 10000);
+        assert_eq!(btc_tx.output.len(), 3); // We have change!
+        assert_eq!(btc_tx.output[0].value, 0);
+        assert_eq!(btc_tx.output[1].value, 10000);
     }
 
     #[test]
@@ -258,7 +284,7 @@ mod tests {
 
         let (btc_tx, _) = wallet.fulfill_peg_out(&op, txouts).unwrap();
         assert_eq!(btc_tx.input.len(), 2);
-        assert_eq!(btc_tx.output.len(), 1); // No change!
+        assert_eq!(btc_tx.output.len(), 2); // No change!
     }
 
     #[test]
