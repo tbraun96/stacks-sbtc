@@ -8,7 +8,7 @@ use wsts::v1::{self, SignatureAggregator};
 fn pure_frost_test() {
     let T = 3;
     let N = 4;
-    let mut rng = OsRng::default();
+    let mut rng = OsRng;
     let mut signers = [
         v1::Signer::new(1, &[0, 1], N, T, &mut rng),
         v1::Signer::new(2, &[2], N, T, &mut rng),

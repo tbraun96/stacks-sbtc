@@ -77,7 +77,7 @@ pub fn reorgs(network: Network, db_dir: &Path, args: &BlocksArgs) -> Result<()> 
         .context("No blocks returned from query")?
         .stacks_height;
 
-    data.iter_mut().rev().for_each(|mut item| {
+    data.iter_mut().rev().for_each(|item| {
         item.reorg_depth = (1 + last_stacks_height - item.stacks_height).max(0);
         last_stacks_height = item.stacks_height;
     });

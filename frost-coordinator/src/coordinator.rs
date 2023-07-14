@@ -605,7 +605,7 @@ mod test {
         let num_signers = parse_env::<u32>("num_signers", 6);
         let keys_per_signer = parse_env::<u32>("keys_per_signer", 3);
         let keys_threshold = parse_env::<u32>("keys_threshold", 15);
-        let mut osrng = OsRng::default();
+        let mut osrng = OsRng;
         let seed = osrng.next_u64();
 
         println!("seed: {}", seed);

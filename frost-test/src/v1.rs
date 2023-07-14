@@ -5,7 +5,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
 
         let ids = [1, 2, 3];
         let n: u32 = 10;

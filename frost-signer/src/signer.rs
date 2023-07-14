@@ -273,7 +273,7 @@ mod test {
 
     fn generate_key_pair() -> (Scalar, PublicKey) {
         // Generate a secret and public key
-        let mut rnd = OsRng::default();
+        let mut rnd = OsRng;
         let sec_key = Scalar::random(&mut rnd);
         let pub_key = PublicKey::new(&sec_key).unwrap();
         (sec_key, pub_key)
@@ -441,7 +441,7 @@ mod test {
     #[test]
     fn verify_msg_dkg_public_share_valid_party_id() {
         let config = TestConfig::new();
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
         let inner = DkgPublicShare {
             dkg_id: 0,
             dkg_public_id: 0,
@@ -480,7 +480,7 @@ mod test {
     #[test]
     fn verify_msg_dkg_public_share_invalid_party_id() {
         let config = TestConfig::new();
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
         let inner = DkgPublicShare {
             dkg_id: 0,
             dkg_public_id: 0,

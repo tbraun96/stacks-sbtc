@@ -67,7 +67,7 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_shared_secret() {
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
 
         let x = Scalar::random(&mut rng);
         let y = Scalar::random(&mut rng);
@@ -84,7 +84,7 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_encrypt_decrypt() {
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
         let msg = "It was many and many a year ago, in a kingdom by the sea...";
 
         let x = Scalar::random(&mut rng);

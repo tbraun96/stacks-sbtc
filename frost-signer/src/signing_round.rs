@@ -318,7 +318,7 @@ impl SigningRound {
         public_keys: PublicKeys,
     ) -> SigningRound {
         assert!(threshold <= total_keys);
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
         let frost_signer = v1::Signer::new(signer_id, &key_ids, total_keys, threshold, &mut rng);
         let signer = Signer {
             frost_signer,
@@ -512,7 +512,7 @@ impl SigningRound {
     }
 
     fn nonce_request(&mut self, nonce_request: NonceRequest) -> Result<Vec<MessageTypes>, Error> {
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
         let mut msgs = vec![];
         let signer_id = self.signer.signer_id;
         let key_ids = self.signer.frost_signer.get_key_ids();
@@ -595,7 +595,7 @@ impl SigningRound {
     }
 
     fn dkg_begin(&mut self, dkg_begin: DkgBegin) -> Result<Vec<MessageTypes>, Error> {
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
 
         self.reset(dkg_begin.dkg_id, &mut rng);
         self.move_to(States::DkgPublicDistribute)?;
@@ -606,7 +606,7 @@ impl SigningRound {
     }
 
     fn dkg_public_begin(&mut self) -> Result<Vec<MessageTypes>, Error> {
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
         let mut msgs = vec![];
         let polys = self.signer.frost_signer.get_poly_commitments(&mut rng);
 
@@ -634,7 +634,7 @@ impl SigningRound {
     }
 
     fn dkg_private_begin(&mut self) -> Result<Vec<MessageTypes>, Error> {
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
         let mut msgs = vec![];
         for (key_id, private_shares) in &self.signer.frost_signer.get_shares() {
             info!(
@@ -716,7 +716,7 @@ impl From<&FrostSigner> for SigningRound {
             .collect::<Vec<u32>>();
 
         assert!(signer.config.keys_threshold <= signer.config.total_keys);
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
         let frost_signer = v1::Signer::new(
             signer_id,
             &key_ids,
@@ -762,7 +762,7 @@ mod test {
     use crate::state_machine::States;
 
     fn get_rng() -> impl RngCore + CryptoRng {
-        let rnd = OsRng::default();
+        let rnd = OsRng;
         //rand::rngs::StdRng::seed_from_u64(rnd.next_u64()) // todo: fix trait `rand_core::RngCore` is not implemented for `StdRng`
         rnd
     }

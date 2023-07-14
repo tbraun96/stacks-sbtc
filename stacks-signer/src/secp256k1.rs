@@ -15,7 +15,7 @@ impl Secp256k1 {
     /// Generate a random Secp256k1 private key
     pub fn generate_private_key(self) -> std::io::Result<()> {
         info!("Generating a new private key.");
-        let mut rnd = OsRng::default();
+        let mut rnd = OsRng;
         let private_key = Scalar::random(&mut rnd);
         if let Some(filepath) = self.filepath {
             info!(

@@ -316,7 +316,7 @@ impl Default for SignerHelper {
         // Signer setup
         let threshold = 3;
         let total = 4;
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
         let signers = [
             Signer::new(1, &[0, 1], total, threshold, &mut rng),
             Signer::new(2, &[2], total, threshold, &mut rng),

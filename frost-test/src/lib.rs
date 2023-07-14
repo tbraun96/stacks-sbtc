@@ -89,7 +89,7 @@ mod tests {
         let N: u32 = 10;
         let T = (N * 2) / 3;
 
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
 
         //
         let mut parties = (0..N)
