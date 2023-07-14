@@ -126,16 +126,18 @@ pub trait Coordinator: Sized {
     }
 
     fn process_queue(&mut self) -> Result<()> {
-        match self.peg_queue().sbtc_op()? {
-            Some(SbtcOp::PegIn(op)) => {
-                debug!("Processing peg in request: {:?}", op);
-                self.peg_in(op)
+        loop {
+            match self.peg_queue().sbtc_op()? {
+                Some(SbtcOp::PegIn(op)) => {
+                    debug!("Processing peg in request: {:?}", op);
+                    self.peg_in(op)?;
+                }
+                Some(SbtcOp::PegOutRequest(op)) => {
+                    debug!("Processing peg out request: {:?}", op);
+                    self.peg_out(op)?;
+                }
+                None => return Ok(()),
             }
-            Some(SbtcOp::PegOutRequest(op)) => {
-                debug!("Processing peg out request: {:?}", op);
-                self.peg_out(op)
-            }
-            None => Ok(()),
         }
     }
 }
