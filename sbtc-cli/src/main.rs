@@ -1,9 +1,14 @@
 use std::collections::{BTreeMap, HashMap};
+use std::io::stdout;
 use std::iter::once;
 use std::str::FromStr;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
+use array_bytes::bytes2hex;
 use bdk::blockchain::Blockchain;
+use bdk::keys::bip39::Mnemonic;
+use bdk::keys::{DerivableKey, ExtendedKey};
+use bdk::miniscript::BareCtx;
 use bdk::SignOptions;
 use bdk::{
     blockchain::ElectrumBlockchain, database::MemoryDatabase, electrum_client::Client,
@@ -13,10 +18,16 @@ use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;
 use bitcoin::psbt::serialize::{Deserialize, Serialize};
 use bitcoin::psbt::PartiallySignedTransaction;
+use bitcoin::schnorr::TweakedPublicKey;
+use bitcoin::secp256k1::rand::random;
 use bitcoin::secp256k1::{Message, Secp256k1};
 use bitcoin::{Address as BitcoinAddress, Network, PrivateKey, TxOut};
 use bitcoin::{Script, Transaction};
+use blockstack_lib::address::{
+    C32_ADDRESS_VERSION_MAINNET_SINGLESIG, C32_ADDRESS_VERSION_TESTNET_SINGLESIG,
+};
 use blockstack_lib::types::{chainstate::StacksAddress, Address};
+use blockstack_lib::util::hash::Hash160;
 use clap::Parser;
 
 fn main() -> Result<(), anyhow::Error> {
@@ -26,6 +37,7 @@ fn main() -> Result<(), anyhow::Error> {
         Command::Deposit(deposit_args) => build_deposit_tx(&deposit_args),
         Command::Withdraw(withdrawal_args) => build_withdrawal_tx(&withdrawal_args),
         Command::Broadcast(broadcast_args) => broadcast_tx(&broadcast_args),
+        Command::GenerateFrom(generate_args) => generate(&generate_args),
     }
 }
 
@@ -34,6 +46,7 @@ enum Command {
     Deposit(DepositArgs),
     Withdraw(WithdrawalArgs),
     Broadcast(BroadcastArgs),
+    GenerateFrom(GenerateArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -89,6 +102,24 @@ struct BroadcastArgs {
     network: Network,
     /// The transaction to broadcast
     tx: String,
+}
+
+#[derive(clap::Subcommand, Debug, Clone)]
+enum GenerateSubcommand {
+    New,
+    Wif { wif: String },
+    PrivateKeyHex { private_key: String },
+    Mnemonic { mnemonic: String },
+}
+
+#[derive(clap::Parser, Debug, Clone)]
+struct GenerateArgs {
+    /// Specify how to generate the credentials
+    #[command(subcommand)]
+    subcommand: GenerateSubcommand,
+    /// The network to broadcast to
+    #[clap(short, long, default_value_t = Network::Testnet)]
+    network: Network,
 }
 
 #[derive(Parser)]
@@ -169,6 +200,110 @@ fn broadcast_tx(broadcast: &BroadcastArgs) -> anyhow::Result<()> {
 
     println!("Broadcasted tx: {}", tx.txid());
     Ok(())
+}
+
+#[derive(serde::Serialize, Debug, Clone)]
+struct Credentials {
+    mnemonic: String,
+    wif: String,
+    private_key: String,
+    public_key: String,
+    stacks_address: String,
+    bitcoin_taproot_address_tweaked: String,
+    bitcoin_taproot_address_untweaked: String,
+    bitcoin_p2pkh_address: String,
+}
+
+fn generate(generate_args: &GenerateArgs) -> anyhow::Result<()> {
+    let (private_key, maybe_mnemonic) = match &generate_args.subcommand {
+        GenerateSubcommand::New => {
+            let mnemonic = random_mnemonic()?;
+            (
+                private_key_from_mnemonic(generate_args.network, mnemonic.clone())?,
+                Some(mnemonic),
+            )
+        }
+        GenerateSubcommand::Wif { wif } => (private_key_from_wif(wif)?, None),
+        GenerateSubcommand::PrivateKeyHex { private_key } => (
+            parse_private_key_from_hex(private_key, generate_args.network)?,
+            None,
+        ),
+        GenerateSubcommand::Mnemonic { mnemonic } => {
+            let mnemonic = Mnemonic::parse(mnemonic)?;
+            (
+                private_key_from_mnemonic(generate_args.network, mnemonic.clone())?,
+                Some(mnemonic),
+            )
+        }
+    };
+
+    let credentials = generate_credentials(&private_key, maybe_mnemonic)?;
+
+    serde_json::to_writer_pretty(stdout(), &credentials)?;
+
+    Ok(())
+}
+
+fn random_mnemonic() -> anyhow::Result<Mnemonic> {
+    let entropy: Vec<u8> = std::iter::from_fn(|| Some(random())).take(32).collect();
+    Mnemonic::from_entropy(&entropy).context("Could not create mnemonic from entropy")
+}
+
+fn private_key_from_wif(wif: &str) -> anyhow::Result<PrivateKey> {
+    Ok(PrivateKey::from_wif(wif)?)
+}
+
+fn parse_private_key_from_hex(private_key: &str, network: Network) -> anyhow::Result<PrivateKey> {
+    let slice = array_bytes::hex2bytes(private_key)
+        .map_err(|_| anyhow::anyhow!("Failed to parse hex string: {}", private_key,))?;
+    Ok(PrivateKey::from_slice(&slice, network)?)
+}
+
+fn private_key_from_mnemonic(network: Network, mnemonic: Mnemonic) -> anyhow::Result<PrivateKey> {
+    let extended_key: ExtendedKey<BareCtx> = mnemonic.into_extended_key()?;
+    let private_key = extended_key
+        .into_xprv(network)
+        .ok_or(anyhow!("Could not create an extended private key"))?;
+
+    Ok(private_key.to_priv())
+}
+
+fn generate_credentials(
+    private_key: &PrivateKey,
+    maybe_mnemonic: Option<Mnemonic>,
+) -> anyhow::Result<Credentials> {
+    let secp = Secp256k1::new();
+    let public_key = private_key.public_key(&secp);
+
+    let stacks_address_version = match private_key.network {
+        Network::Testnet => C32_ADDRESS_VERSION_TESTNET_SINGLESIG,
+        Network::Bitcoin => C32_ADDRESS_VERSION_MAINNET_SINGLESIG,
+        _ => panic!("Not supported"),
+    };
+    let public_key_hash = Hash160::from_vec(&public_key.pubkey_hash().as_hash().to_vec()).unwrap();
+    let stacks_address = StacksAddress::new(stacks_address_version, public_key_hash);
+    let bitcoin_taproot_address_tweaked =
+        BitcoinAddress::p2tr(&secp, public_key.inner.into(), None, private_key.network).to_string();
+
+    let bitcoin_taproot_address_untweaked = BitcoinAddress::p2tr_tweaked(
+        TweakedPublicKey::dangerous_assume_tweaked(public_key.inner.into()),
+        private_key.network,
+    )
+    .to_string();
+
+    Ok(Credentials {
+        mnemonic: maybe_mnemonic
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_default(),
+        wif: private_key.to_wif(),
+        private_key: bytes2hex("0x", private_key.to_bytes()),
+        public_key: bytes2hex("0x", public_key.to_bytes()),
+        stacks_address: stacks_address.to_string(),
+        bitcoin_taproot_address_tweaked,
+        bitcoin_taproot_address_untweaked,
+        bitcoin_p2pkh_address: BitcoinAddress::p2pkh(&public_key, private_key.network).to_string(),
+    })
 }
 
 fn setup_wallet(private_key: PrivateKey) -> anyhow::Result<Wallet<MemoryDatabase>> {

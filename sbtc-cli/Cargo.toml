@@ -8,10 +8,12 @@ edition = "2021"
 [dependencies]
 anyhow.workspace = true
 array-bytes.workspace = true
-bdk.workspace = true
+bdk = { workspace = true, features = ["keys-bip39"] }
 bitcoin.workspace = true
 blockstack-core.workspace = true
 clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 sha256.workspace = true
 regex.workspace = true
 
