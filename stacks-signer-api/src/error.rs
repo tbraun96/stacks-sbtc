@@ -12,6 +12,8 @@ pub enum ErrorCode {
     SignerNotFound,
     /// Key not found
     KeyNotFound,
+    /// Address not found
+    AddressNotFound,
 }
 
 impl From<DatabaseError> for ErrorResponse {

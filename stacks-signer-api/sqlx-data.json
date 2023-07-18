@@ -1,175 +1,77 @@
 {
   "db": "SQLite",
-  "201861bae670413c0de300ba5b5b0251c8d7922836006b28ac001e71eac8a0fb": {
-    "describe": {
-      "columns": [
-        {
-          "name": "key",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "signer_id",
-          "ordinal": 1,
-          "type_info": "Int64"
-        },
-        {
-          "name": "user_id",
-          "ordinal": 2,
-          "type_info": "Int64"
-        }
-      ],
-      "nullable": [
-        false,
-        false,
-        false
-      ],
-      "parameters": {
-        "Right": 3
-      }
-    },
-    "query": "SELECT * FROM keys WHERE signer_id = ?1 AND user_id = ?2 AND key = ?3"
-  },
-  "2a8394ba815b4b7e180bda5512c7183ff9257945d6545ea51c6a079b9d975f99": {
-    "describe": {
-      "columns": [
-        {
-          "name": "key",
-          "ordinal": 0,
-          "type_info": "Text"
-        },
-        {
-          "name": "signer_id",
-          "ordinal": 1,
-          "type_info": "Int64"
-        },
-        {
-          "name": "user_id",
-          "ordinal": 2,
-          "type_info": "Int64"
-        }
-      ],
-      "nullable": [
-        false,
-        false,
-        false
-      ],
-      "parameters": {
-        "Right": 2
-      }
-    },
-    "query": "SELECT * FROM keys WHERE signer_id = ?1 AND user_id = ?2"
-  },
-  "2c2a3c38c0388e716f288be9482c4179894106357098c9519365f300336ea9fc": {
+  "04eac66be54316091db4b190894c71d63de586fecf198fda9f714b485e784846": {
     "describe": {
       "columns": [],
       "nullable": [],
       "parameters": {
-        "Right": 2
+        "Right": 6
       }
     },
-    "query": "DELETE FROM keys WHERE signer_id = ?1 AND user_id = ?2"
+    "query": "REPLACE INTO votes (\n        txid, vote_status, vote_choice, vote_mechanism, target_consensus, current_consensus\n    ) VALUES (?, ?, ?, ?, ?, ?);"
   },
-  "404c8fa11dc7fe5dda72eeda34823f12d36c9a1c9fc7877aa6acbbb80b27d0f7": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Right": 2
-      }
-    },
-    "query": "DELETE FROM sbtc_signers WHERE signer_id = ?1 AND user_id = ?2"
-  },
-  "44ef0bc9ed75331c37cdd05b7560897c0f6def32edf5d1b5112dcd3c35a4ed9e": {
+  "08137aa3c1118b24d82059e1fb6ee03ab0758c3e81f4e0169cca7dc16aff7b4b": {
     "describe": {
       "columns": [
         {
-          "name": "signer_id",
+          "name": "txid",
           "ordinal": 0,
-          "type_info": "Int64"
+          "type_info": "Text"
         },
         {
-          "name": "user_id",
+          "name": "transaction_kind",
           "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "transaction_block_height",
+          "ordinal": 2,
           "type_info": "Int64"
         },
         {
-          "name": "status",
-          "ordinal": 2,
+          "name": "transaction_deadline_block_height",
+          "ordinal": 3,
+          "type_info": "Int64"
+        },
+        {
+          "name": "transaction_amount",
+          "ordinal": 4,
+          "type_info": "Int64"
+        },
+        {
+          "name": "transaction_fees",
+          "ordinal": 5,
+          "type_info": "Int64"
+        },
+        {
+          "name": "memo",
+          "ordinal": 6,
+          "type_info": "Blob"
+        },
+        {
+          "name": "transaction_originator_address",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "transaction_debit_address",
+          "ordinal": 8,
+          "type_info": "Text"
+        },
+        {
+          "name": "transaction_credit_address",
+          "ordinal": 9,
           "type_info": "Text"
         }
       ],
       "nullable": [
         false,
         false,
-        false
-      ],
-      "parameters": {
-        "Right": 0
-      }
-    },
-    "query": "SELECT signer_id, user_id, status FROM sbtc_signers ORDER BY signer_id ASC"
-  },
-  "5bd63f02d78f08c57d13649d300f30273275785a98b8f283fc96f410b335b1b9": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Right": 3
-      }
-    },
-    "query": "INSERT OR REPLACE INTO keys (signer_id, user_id, key) VALUES (?1, ?2, ?3)"
-  },
-  "94447c582da04440f5c806f82dba9c32160eec0e3be7099ad969bef6c3d9cf09": {
-    "describe": {
-      "columns": [
-        {
-          "name": "signer_id",
-          "ordinal": 0,
-          "type_info": "Int64"
-        },
-        {
-          "name": "user_id",
-          "ordinal": 1,
-          "type_info": "Int64"
-        },
-        {
-          "name": "key",
-          "ordinal": 2,
-          "type_info": "Text"
-        }
-      ],
-      "nullable": [
+        true,
         false,
         false,
-        false
-      ],
-      "parameters": {
-        "Right": 3
-      }
-    },
-    "query": "SELECT signer_id, user_id, key FROM keys WHERE signer_id = ?1 AND user_id = ?2 AND key = ?3"
-  },
-  "9e9891c86e8e8b8bf27bea36928cd5e5ad9cd456dc5c420e5a1777b93b006399": {
-    "describe": {
-      "columns": [
-        {
-          "name": "signer_id",
-          "ordinal": 0,
-          "type_info": "Int64"
-        },
-        {
-          "name": "user_id",
-          "ordinal": 1,
-          "type_info": "Int64"
-        },
-        {
-          "name": "status",
-          "ordinal": 2,
-          "type_info": "Text"
-        }
-      ],
-      "nullable": [
+        false,
+        false,
         false,
         false,
         false
@@ -178,43 +80,217 @@
         "Right": 1
       }
     },
-    "query": "SELECT signer_id, user_id, status FROM sbtc_signers WHERE status = ?1 ORDER BY signer_id ASC"
+    "query": "SELECT * FROM transactions WHERE txid = ?"
   },
-  "cb54bcbda386ea245f6888c8e3bdda2aa6522cd5d176e013e589e8d4cff5dd10": {
+  "1133fc2de36483b2ca3a3d2f82f4831d466e8ca3de859f5ab6ea0505706973ea": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 1
+      }
+    },
+    "query": "REPLACE INTO auto_deny_addresses (address) VALUES (?1)"
+  },
+  "32facf3bf257dfe2a701826f480e26a72f380e7c7e446d7b6b5f9e0a3c8fdb70": {
     "describe": {
       "columns": [
         {
-          "name": "signer_id",
+          "name": "txid",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "transaction_kind",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "transaction_block_height",
+          "ordinal": 2,
+          "type_info": "Int64"
+        },
+        {
+          "name": "transaction_deadline_block_height",
+          "ordinal": 3,
+          "type_info": "Int64"
+        },
+        {
+          "name": "transaction_amount",
+          "ordinal": 4,
+          "type_info": "Int64"
+        },
+        {
+          "name": "transaction_fees",
+          "ordinal": 5,
+          "type_info": "Int64"
+        },
+        {
+          "name": "memo",
+          "ordinal": 6,
+          "type_info": "Blob"
+        },
+        {
+          "name": "transaction_originator_address",
+          "ordinal": 7,
+          "type_info": "Text"
+        },
+        {
+          "name": "transaction_debit_address",
+          "ordinal": 8,
+          "type_info": "Text"
+        },
+        {
+          "name": "transaction_credit_address",
+          "ordinal": 9,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Right": 0
+      }
+    },
+    "query": "SELECT * FROM transactions"
+  },
+  "41a748402641fa37e06f2cbfc36377f8c6be62e37df8020d3d7bdc3b8410bf9d": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 10
+      }
+    },
+    "query": "\n    REPLACE INTO transactions (\n        txid, transaction_kind, transaction_block_height, transaction_deadline_block_height,\n        transaction_amount, transaction_fees, memo, transaction_originator_address,\n        transaction_debit_address, transaction_credit_address\n    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  },
+  "72cb8920f8bae1db08dd875bd985e8ecc7f2a606c54be05ae5b8a966e1a5cab4": {
+    "describe": {
+      "columns": [
+        {
+          "name": "address",
+          "ordinal": 0,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Right": 0
+      }
+    },
+    "query": "SELECT address FROM auto_deny_addresses"
+  },
+  "922dda0d16b61a25068183d3b7c7892ad15d72e175433a4e35cab33d0263acfb": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
           "ordinal": 0,
           "type_info": "Int64"
         },
         {
-          "name": "user_id",
+          "name": "secret_key",
           "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "auto_approve_max_amount",
+          "ordinal": 2,
           "type_info": "Int64"
         },
         {
-          "name": "status",
+          "name": "delegate_public_key",
+          "ordinal": 3,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Right": 0
+      }
+    },
+    "query": "SELECT * FROM config"
+  },
+  "cc0d2bf94abcb62747a8b8c697e24e2729f1e8d83d40f5eabbd1ab39332cfd3d": {
+    "describe": {
+      "columns": [
+        {
+          "name": "txid",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "vote_status",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "vote_choice",
           "ordinal": 2,
           "type_info": "Text"
+        },
+        {
+          "name": "vote_mechanism",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "target_consensus",
+          "ordinal": 4,
+          "type_info": "Int64"
+        },
+        {
+          "name": "current_consensus",
+          "ordinal": 5,
+          "type_info": "Int64"
         }
       ],
       "nullable": [
         false,
         false,
+        true,
+        false,
+        false,
         false
       ],
       "parameters": {
-        "Right": 2
+        "Right": 1
       }
     },
-    "query": "SELECT * FROM sbtc_signers WHERE signer_id = ?1 AND user_id = ?2"
+    "query": "SELECT * FROM votes WHERE txid = ?"
   },
-  "d402cb8f21e5a828bfbc6aa8fda6aa45b5131fe47f69b0429ee426d342dd62ba": {
+  "db1c2e502660d97175db877568e52b125bd588f3bf5c045df0d36314c9135219": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 4
+      }
+    },
+    "query": "REPLACE INTO config (id, secret_key, delegate_public_key, auto_approve_max_amount) VALUES (?1, ?2, ?3, ?4)"
+  },
+  "f8ba69ac8f881555a4987cc82bf4bf15326465c3446a4ffb87a3815fa4b8a118": {
     "describe": {
       "columns": [
         {
-          "name": "key",
+          "name": "public_key",
           "ordinal": 0,
           "type_info": "Text"
         }
@@ -223,29 +299,19 @@
         false
       ],
       "parameters": {
-        "Right": 2
+        "Right": 0
       }
     },
-    "query": "SELECT key FROM keys WHERE signer_id = ?1 AND user_id = ?2 ORDER BY key ASC"
+    "query": "SELECT public_key FROM delegator_public_keys"
   },
-  "d4660e2f922c65994b36af3ec4c40ebe68838fc2087cbe539bffd9758d6cf44f": {
+  "ffea6f30b6abdfd408acd6b4bb8f823bd2ba26c25aca3d15dab3b483366da724": {
     "describe": {
       "columns": [],
       "nullable": [],
       "parameters": {
-        "Right": 3
+        "Right": 1
       }
     },
-    "query": "DELETE FROM keys WHERE signer_id = ?1 AND user_id = ?2 AND key = ?3"
-  },
-  "e26cf6a5dcb7a99e7896bdcf986e5d6dca3026cac98f2ff285c4a93150ed77d4": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Right": 3
-      }
-    },
-    "query": "INSERT OR REPLACE INTO sbtc_signers (signer_id, user_id, status) VALUES (?1, ?2, ?3)"
+    "query": "REPLACE INTO delegator_public_keys (public_key) VALUES (?1)"
   }
 }

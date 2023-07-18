@@ -2,11 +2,10 @@ use clap::Parser;
 use rand::Rng;
 use sqlx::SqlitePool;
 use stacks_signer_api::{
+    config::Config,
     db::{self, transaction::add_transaction, vote::add_vote},
     error::{ErrorCode, ErrorResponse},
-    key::Key,
     routes::all_routes,
-    signer::{Signer, SignerStatus},
     transaction::{Transaction, TransactionAddress, TransactionKind, TransactionResponse},
     vote::{Vote, VoteChoice, VoteMechanism, VoteRequest, VoteResponse, VoteStatus, VoteTally},
 };
@@ -18,7 +17,7 @@ use std::{
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
-use utoipa_swagger_ui::Config;
+use utoipa_swagger_ui::Config as SwaggerConfig;
 use warp::{
     http::Uri,
     hyper::{Response, StatusCode},
@@ -26,18 +25,17 @@ use warp::{
     Filter, Rejection, Reply,
 };
 
+// Secret key used to generate a default signer config
+const TEST_SECRET_KEY: &str = "26F85CE8B2C635AD92F6148E4443FE415F512F3F29F44AB0E2CBDA819295BBD5";
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        stacks_signer_api::routes::transaction::get_transaction_by_id,
-        stacks_signer_api::routes::transaction::get_transactions,
+        stacks_signer_api::routes::transactions::get_transaction_by_id,
+        stacks_signer_api::routes::transactions::get_transactions,
         stacks_signer_api::routes::vote::vote,
-        stacks_signer_api::routes::signers::get_signers,
-        stacks_signer_api::routes::signers::add_signer,
-        stacks_signer_api::routes::signers::delete_signer,
-        stacks_signer_api::routes::keys::add_key,
-        stacks_signer_api::routes::keys::delete_key,
-        stacks_signer_api::routes::keys::get_keys,
+        stacks_signer_api::routes::config::get_config,
+        stacks_signer_api::routes::config::update_config,
     ),
     components(
         schemas(
@@ -51,13 +49,11 @@ use warp::{
             VoteRequest,
             VoteStatus,
             VoteTally,
-            Signer,
             ErrorCode,
             ErrorResponse,
-            SignerStatus,
-            Key,
+            Config
         ),
-        responses(TransactionResponse, VoteResponse, Signer, ErrorResponse, Key)
+        responses(TransactionResponse, VoteResponse, Config, ErrorResponse)
     )
 )]
 struct ApiDoc;
@@ -117,6 +113,10 @@ struct RunArgs {
     /// Port and address to run API server on
     #[command(flatten)]
     pub server: ServerArgs,
+    /// Optional path to a signer configuration file
+    /// Required if env DATABASE_URL is not set or no config is found in the database
+    #[arg(short, long)]
+    pub config: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -127,13 +127,32 @@ struct Cli {
     command: Command,
 }
 
-async fn init_pool() -> anyhow::Result<SqlitePool> {
+async fn init_pool(config_path: Option<String>) -> anyhow::Result<SqlitePool> {
     let _ = dotenv::dotenv();
-
+    let database_url = env::var("DATABASE_URL").ok();
+    if database_url.is_none() && config_path.is_none() {
+        return Err(anyhow::anyhow!(
+            "No DATABASE_URL env variable set or config path provided"
+        ));
+    }
     // Initialize the connection pool__
-    db::init_pool(env::var("DATABASE_URL").ok())
+    let pool = db::init_pool(env::var("DATABASE_URL").ok())
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to initialize database connection pool: {}", e))
+        .map_err(|e| anyhow::anyhow!("Failed to initialize database connection pool: {}", e))?;
+    // If we have a config path, try to load the config from the file
+    if let Some(path) = config_path {
+        dbg!(&path);
+        let config = Config::from_path(path)
+            .map_err(|e| anyhow::anyhow!("Failed to load config from file: {}", e))?;
+        db::config::update_config(&pool, &config).await?;
+    } else {
+        db::config::get_config(&pool).await.map_err(|_| {
+            anyhow::anyhow!(
+                "No configuration loaded in database. Must run with --config option set"
+            )
+        })?;
+    }
+    Ok(pool)
 }
 
 /// Run the Signer API server on the provided port and address
@@ -166,7 +185,12 @@ fn generate_docs(output: &Option<String>) -> anyhow::Result<()> {
 /// Run the Signer API server with a database of simulated data
 async fn run_simulator(args: SimulatorArgs) -> anyhow::Result<()> {
     // Initialize the connection pool
-    let pool = init_pool().await?;
+    let pool = init_pool(None).await?;
+    let config = Config::from_secret_key(TEST_SECRET_KEY)
+        .map_err(|e| anyhow::anyhow!("Failed to generate config from secret key: {}", e))?;
+    db::config::update_config(&pool, &config)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to update config: {}", e))?;
     let (txs, votes) = generate_txs_votes();
     for tx in txs {
         add_transaction(&pool, &tx)
@@ -185,10 +209,10 @@ async fn run_simulator(args: SimulatorArgs) -> anyhow::Result<()> {
 /// Serve the Swagger UI page on the provided address and port using the generated OpenAPI json doc
 async fn run_swagger(args: &SwaggerArgs) -> anyhow::Result<()> {
     // Initialize the connection pool
-    let pool = init_pool().await?;
+    let pool = init_pool(None).await?;
     // Configure where we host the doc in swagger-ui
     let path_buf = Path::new(&args.path);
-    let config = Arc::new(Config::from(args.path.clone()));
+    let config = Arc::new(SwaggerConfig::from(args.path.clone()));
     let file_name = path_buf
         .file_name()
         .ok_or(anyhow::anyhow!("Invalid file path provided."))?
@@ -221,7 +245,7 @@ async fn run_swagger(args: &SwaggerArgs) -> anyhow::Result<()> {
 async fn serve_swagger(
     full_path: FullPath,
     tail: Tail,
-    config: Arc<Config<'static>>,
+    config: Arc<SwaggerConfig<'static>>,
 ) -> Result<Box<dyn Reply + 'static>, Rejection> {
     if full_path.as_str() == "/swagger-ui" {
         return Ok(Box::new(warp::redirect::found(Uri::from_static(
@@ -263,7 +287,7 @@ async fn main() {
         Command::Simulator(args) => run_simulator(args).await,
         Command::Run(args) => {
             // Initialize the connection pool
-            match init_pool().await {
+            match init_pool(args.config).await {
                 Ok(pool) => run(pool, args.server).await,
                 Err(e) => Err(e),
             }

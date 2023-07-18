@@ -6,17 +6,14 @@ This library contains API calls to configure a signer to auto-sign transactions 
 
 Usage documentation can be found in the [README](https://github.com/Trust-Machines/core-eng/stacks-signer-api/README.md).
 */
-
+/// Signer configuration
+pub mod config;
 /// Sqlite database
 pub mod db;
 /// Signer API Errors
 pub mod error;
-/// Delegator key
-pub mod key;
 /// Signer API Routes
 pub mod routes;
-/// Signer Interactions
-pub mod signer;
 /// Transactions
 pub mod transaction;
 /// Vote

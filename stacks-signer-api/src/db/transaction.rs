@@ -3,17 +3,7 @@ use crate::{
     transaction::{Transaction, TransactionAddress},
 };
 
-use sqlx::{Row, SqlitePool};
-
-// SQL queries used for performing various operations on the "transactions" table.
-const SQL_INSERT_TRANSACTION: &str = r#"
-        INSERT INTO transactions (
-            txid, transaction_kind, transaction_block_height, transaction_deadline_block_height,
-            transaction_amount, transaction_fees, memo, transaction_originator_address,
-            transaction_debit_address, transaction_credit_address
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#;
-const SQL_SELECT_TRANSACTIONS: &str = r#"SELECT * FROM transactions"#;
-const SQL_SELECT_TRANSACTION_BY_ID: &str = r#"SELECT * FROM transactions WHERE txid = ?"#;
+use sqlx::SqlitePool;
 
 /// Add a given transaction to the database.
 ///
@@ -24,29 +14,39 @@ const SQL_SELECT_TRANSACTION_BY_ID: &str = r#"SELECT * FROM transactions WHERE t
 /// # Returns
 /// * Result<(), DatabaseError>: The result of the database operation.
 pub async fn add_transaction(pool: &SqlitePool, transaction: &Transaction) -> Result<(), Error> {
+    let txid = transaction.txid.clone();
     let transaction_kind = &transaction.transaction_kind.to_string();
-    let transaction_block_height = transaction.transaction_block_height;
-    let transaction_deadline_block_height = transaction.transaction_deadline_block_height;
-    let transaction_amount = transaction.transaction_amount;
-    let transaction_fees = transaction.transaction_fees;
+    let transaction_block_height = transaction
+        .transaction_block_height
+        .map(|height| height as i64);
+    let transaction_deadline_block_height = transaction.transaction_deadline_block_height as i64;
+    let transaction_amount = transaction.transaction_amount as i64;
+    let transaction_fees = transaction.transaction_fees as i64;
     let memo = &transaction.memo;
     let transaction_originator_address = ""; //&transaction.transaction_originator_address.0;
     let transaction_debit_address = ""; //&transaction.transaction_debit_address.0;
     let transaction_credit_address = ""; //&transaction.transaction_credit_address.0;
 
-    sqlx::query(SQL_INSERT_TRANSACTION)
-        .bind(&transaction.txid)
-        .bind(transaction_kind)
-        .bind(transaction_block_height.map(|height| height as i64))
-        .bind(transaction_deadline_block_height as i64)
-        .bind(transaction_amount as i64)
-        .bind(transaction_fees as i64)
-        .bind(memo)
-        .bind(transaction_originator_address)
-        .bind(transaction_debit_address)
-        .bind(transaction_credit_address)
-        .execute(pool)
-        .await?;
+    sqlx::query!(
+        r#"
+    REPLACE INTO transactions (
+        txid, transaction_kind, transaction_block_height, transaction_deadline_block_height,
+        transaction_amount, transaction_fees, memo, transaction_originator_address,
+        transaction_debit_address, transaction_credit_address
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+        txid,
+        transaction_kind,
+        transaction_block_height,
+        transaction_deadline_block_height,
+        transaction_amount,
+        transaction_fees,
+        memo,
+        transaction_originator_address,
+        transaction_debit_address,
+        transaction_credit_address
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -58,47 +58,41 @@ pub async fn add_transaction(pool: &SqlitePool, transaction: &Transaction) -> Re
 /// # Returns
 /// * Result<Vec<Transactions>>: The transactions found in the database.
 pub async fn get_transactions(pool: &SqlitePool) -> Result<Vec<Transaction>, Error> {
-    let rows = sqlx::query(SQL_SELECT_TRANSACTIONS).fetch_all(pool).await?;
-    let mut txs = vec![];
-    for row in rows {
-        let txid: String = row.try_get("txid")?;
+    sqlx::query!("SELECT * FROM transactions")
+        .fetch_all(pool)
+        .await?
+        .iter()
+        .map(|row| {
+            let txid = row.txid.clone();
+            let transaction_kind = row.transaction_kind.parse()?;
+            let transaction_block_height = row.transaction_block_height.map(|height| height as u64);
+            let transaction_deadline_block_height = row.transaction_deadline_block_height as u64;
+            let transaction_amount = row.transaction_amount as u64;
+            let transaction_fees = row.transaction_fees as u64;
+            let memo = row.memo.clone();
+            let transaction_originator_address =
+                TransactionAddress::Bitcoin(row.transaction_originator_address.clone());
 
-        let transaction_kind: String = row.try_get("transaction_kind")?;
-        let transaction_kind = transaction_kind.parse()?;
+            let transaction_debit_address =
+                TransactionAddress::Bitcoin(row.transaction_debit_address.clone());
 
-        let transaction_block_height: Option<i64> = row.try_get("transaction_block_height")?;
-        let transaction_deadline_block_height: i64 =
-            row.try_get("transaction_deadline_block_height")?;
-        let transaction_amount: i64 = row.try_get("transaction_amount")?;
-        let transaction_fees: i64 = row.try_get("transaction_fees")?;
+            let transaction_credit_address =
+                TransactionAddress::Bitcoin(row.transaction_credit_address.clone());
 
-        let memo: Vec<u8> = row.try_get("memo")?;
-        let transaction_originator_address: String =
-            row.try_get("transaction_originator_address")?;
-        let transaction_originator_address =
-            TransactionAddress::Bitcoin(transaction_originator_address);
-
-        let transaction_debit_address: String = row.try_get("transaction_debit_address")?;
-        let transaction_debit_address = TransactionAddress::Bitcoin(transaction_debit_address);
-
-        let transaction_credit_address: String = row.try_get("transaction_credit_address")?;
-        let transaction_credit_address = TransactionAddress::Bitcoin(transaction_credit_address);
-
-        let tx = Transaction {
-            txid,
-            transaction_kind,
-            transaction_block_height: transaction_block_height.map(|height| height as u64),
-            transaction_deadline_block_height: transaction_deadline_block_height as u64,
-            transaction_amount: transaction_amount as u64,
-            transaction_fees: transaction_fees as u64,
-            memo,
-            transaction_originator_address,
-            transaction_debit_address,
-            transaction_credit_address,
-        };
-        txs.push(tx);
-    }
-    Ok(txs)
+            Ok(Transaction {
+                txid,
+                transaction_kind,
+                transaction_block_height,
+                transaction_deadline_block_height,
+                transaction_amount,
+                transaction_fees,
+                memo,
+                transaction_originator_address,
+                transaction_debit_address,
+                transaction_credit_address,
+            })
+        })
+        .collect()
 }
 
 /// Get a transaction with a specific transaction ID from the database.
@@ -110,43 +104,35 @@ pub async fn get_transactions(pool: &SqlitePool) -> Result<Vec<Transaction>, Err
 /// # Returns
 /// * Result<Transaction>: The transaction found in the database.
 pub async fn get_transaction_by_id(txid: &str, pool: &SqlitePool) -> Result<Transaction, Error> {
-    let row = sqlx::query(SQL_SELECT_TRANSACTION_BY_ID)
-        .bind(txid)
+    let row = sqlx::query!("SELECT * FROM transactions WHERE txid = ?", txid)
         .fetch_one(pool)
         .await?;
-    let txid: String = row.try_get("txid")?;
-
-    let transaction_kind: String = row.try_get("transaction_kind")?;
-    let transaction_kind = transaction_kind.parse()?;
-
-    let transaction_block_height: Option<i64> = row.try_get("transaction_block_height")?;
-    let transaction_deadline_block_height: i64 =
-        row.try_get("transaction_deadline_block_height")?;
-    let transaction_amount: i64 = row.try_get("transaction_amount")?;
-    let transaction_fees: i64 = row.try_get("transaction_fees")?;
-
-    let memo: Vec<u8> = row.try_get("memo")?;
-    let transaction_originator_address: String = row.try_get("transaction_originator_address")?;
+    let txid = row.txid.clone();
+    let transaction_kind = row.transaction_kind.parse()?;
+    let transaction_block_height = row.transaction_block_height.map(|height| height as u64);
+    let transaction_deadline_block_height = row.transaction_deadline_block_height as u64;
+    let transaction_amount = row.transaction_amount as u64;
+    let transaction_fees = row.transaction_fees as u64;
+    let memo = row.memo.clone();
     let transaction_originator_address =
-        TransactionAddress::Bitcoin(transaction_originator_address);
+        TransactionAddress::Bitcoin(row.transaction_originator_address.clone());
 
-    let transaction_debit_address: String = row.try_get("transaction_debit_address")?;
-    let transaction_debit_address = TransactionAddress::Bitcoin(transaction_debit_address);
+    let transaction_debit_address =
+        TransactionAddress::Bitcoin(row.transaction_debit_address.clone());
 
-    let transaction_credit_address: String = row.try_get("transaction_credit_address")?;
-    let transaction_credit_address = TransactionAddress::Bitcoin(transaction_credit_address);
+    let transaction_credit_address =
+        TransactionAddress::Bitcoin(row.transaction_credit_address.clone());
 
-    let tx = Transaction {
+    Ok(Transaction {
         txid,
         transaction_kind,
-        transaction_block_height: transaction_block_height.map(|height| height as u64),
-        transaction_deadline_block_height: transaction_deadline_block_height as u64,
-        transaction_amount: transaction_amount as u64,
-        transaction_fees: transaction_fees as u64,
+        transaction_block_height,
+        transaction_deadline_block_height,
+        transaction_amount,
+        transaction_fees,
         memo,
         transaction_originator_address,
         transaction_debit_address,
         transaction_credit_address,
-    };
-    Ok(tx)
+    })
 }
