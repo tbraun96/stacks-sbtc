@@ -8,6 +8,7 @@ use bitcoin::{
     blockdata::{opcodes, script::Builder},
     Network, PrivateKey, Script, TxOut,
 };
+use serde::Serialize;
 
 pub fn init_blockchain() -> anyhow::Result<ElectrumBlockchain> {
     let client = Client::new("ssl://blockstream.info:993")?;
@@ -67,4 +68,10 @@ pub fn magic_bytes(network: &Network) -> [u8; 2] {
         Network::Testnet => [b'T', b'2'],
         _ => [b'i', b'd'],
     }
+}
+
+#[derive(Serialize)]
+pub struct TransactionData {
+    pub tx_id: String,
+    pub tx_hex: String,
 }

@@ -1,4 +1,4 @@
-use std::{iter::once, str::FromStr};
+use std::{io::stdout, iter::once, str::FromStr};
 
 use anyhow::anyhow;
 use bdk::{database::MemoryDatabase, SignOptions, Wallet};
@@ -32,9 +32,7 @@ pub struct DepositArgs {
 
 pub fn build_deposit_tx(deposit: &DepositArgs) -> anyhow::Result<()> {
     let private_key = PrivateKey::from_wif(&deposit.wif)?;
-
     let wallet = utils::setup_wallet(private_key)?;
-
     let recipient = StacksAddress::from_string(&deposit.recipient)
         .ok_or(anyhow::anyhow!("Could not parse recipient Stacks address"))?;
     let dkg_address = BitcoinAddress::from_str(&deposit.dkg_wallet)?;
@@ -49,11 +47,14 @@ pub fn build_deposit_tx(deposit: &DepositArgs) -> anyhow::Result<()> {
 
     wallet.sign(&mut psbt, SignOptions::default())?;
     let tx = psbt.extract_tx();
-    println!("Resulting deposit txid: {}", tx.txid());
-    println!(
-        "Resulting serialized deposit tx:\n{}",
-        array_bytes::bytes2hex("", tx.serialize())
-    );
+
+    serde_json::to_writer_pretty(
+        stdout(),
+        &utils::TransactionData {
+            tx_id: tx.txid().to_string(),
+            tx_hex: array_bytes::bytes2hex("", tx.serialize()),
+        },
+    )?;
 
     Ok(())
 }

@@ -1,6 +1,11 @@
+use std::io::stdout;
+
 use anyhow::anyhow;
 use bdk::blockchain::Blockchain;
-use bitcoin::{psbt::serialize::Deserialize, Network, Transaction};
+use bitcoin::{
+    psbt::serialize::{Deserialize, Serialize},
+    Network, Transaction,
+};
 use clap::Parser;
 
 use crate::commands::utils;
@@ -21,6 +26,13 @@ pub fn broadcast_tx(broadcast: &BroadcastArgs) -> anyhow::Result<()> {
     )?;
     blockchain.broadcast(&tx)?;
 
-    println!("Broadcasted tx: {}", tx.txid());
+    serde_json::to_writer_pretty(
+        stdout(),
+        &utils::TransactionData {
+            tx_id: tx.txid().to_string(),
+            tx_hex: array_bytes::bytes2hex("", tx.serialize()),
+        },
+    )?;
+
     Ok(())
 }

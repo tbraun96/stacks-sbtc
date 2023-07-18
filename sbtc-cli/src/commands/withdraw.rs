@@ -1,4 +1,4 @@
-use std::{iter::once, str::FromStr};
+use std::{io::stdout, iter::once, str::FromStr};
 
 use anyhow::anyhow;
 use bdk::{database::MemoryDatabase, SignOptions, Wallet};
@@ -9,6 +9,7 @@ use bitcoin::{
 };
 use clap::Parser;
 
+use crate::commands::utils::TransactionData;
 use crate::commands::utils::{build_op_return_script, magic_bytes, reorder_outputs, setup_wallet};
 
 #[derive(Parser, Debug, Clone)]
@@ -59,11 +60,15 @@ pub fn build_withdrawal_tx(withdrawal: &WithdrawalArgs) -> anyhow::Result<()> {
 
     wallet.sign(&mut psbt, SignOptions::default())?;
     let tx = psbt.extract_tx();
-    println!("Resulting withdrawal txid: {}", tx.txid());
-    println!(
-        "Resulting serialized withdrawal tx:\n{}",
-        array_bytes::bytes2hex("", tx.serialize())
-    );
+
+    serde_json::to_writer_pretty(
+        stdout(),
+        &TransactionData {
+            tx_id: tx.txid().to_string(),
+            tx_hex: array_bytes::bytes2hex("", tx.serialize()),
+        },
+    )?;
+
     Ok(())
 }
 
