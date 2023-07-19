@@ -3,6 +3,7 @@
 apt-get update
 apt-get install -y unzip curl lcov
 
-curl -L -o clarinet 'https://drive.google.com/uc?export=download&confirm=yes&id=1amZ-VC53P8A2NAnwQ2bcduNBrzC-EzG7'
+curl -s https://api.github.com/repos/hirosystems/clarinet/releases/latest | grep "/clarinet-linux-x64-glibc.tar.gz" | cut -d : -f 2,3 | tr -d \" | wget -qi -
+tar -xzf clarinet-linux-x64-glibc.tar.gz
 chmod +x ./clarinet
 mv ./clarinet /usr/local/bin
