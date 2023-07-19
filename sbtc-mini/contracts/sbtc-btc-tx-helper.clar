@@ -1,5 +1,7 @@
 ;; sbtc-btc-tx-helper will eventually be a custom clarity-bitcoin optimised for sBTC
 
+(define-constant OP_0 0x00)
+(define-constant OP_1 0x51)
 (define-constant version-P2WPKH 0x04)
 (define-constant version-P2WSH 0x05)
 (define-constant version-P2TR 0x06)
@@ -48,8 +50,6 @@
 	(is-eq script-length (+ (buff-to-uint-be (unwrap! contract-name-length-byte false)) unlock-script-base-length))
 )
 
-;; Example witness:
-;; 183c001a7321b74e2b6a7e949e6c4ad313035b16650950170075200046422d30ec92c568e21be4b9579cfed8e71ba0702122b014755ae0e23e3563ac
 (define-private (find-unlock-witness-iter (witness (buff 128)) (unlock-script (optional (buff 128))))
 	(begin
 		(asserts! (is-none unlock-script) unlock-script)
@@ -72,15 +72,31 @@
 	(concat (unwrap-panic (element-at (unwrap-panic (to-consensus-buff? (len input))) u16)) input)
 )
 
+;; TODO: Do we need the optional and hard coupling with PoX?
+(define-read-only (current-reward-cycle)
+	(contract-call? .pox-3 current-pox-reward-cycle)
+)
+
 (define-read-only (hashbytes-to-scriptpubkey (peg-wallet { version: (buff 1), hashbytes: (buff 32) }))
 	(begin
 		(asserts! (is-some (index-of? supported-address-versions (get version peg-wallet))) none)
-		(some (concat (if (is-eq (get version peg-wallet) version-P2TR) 0x01 0x00) (prepend-length (get hashbytes peg-wallet))))
+		(some (concat (if (is-eq (get version peg-wallet) version-P2TR) OP_1 OP_0) (prepend-length (get hashbytes peg-wallet))))
 	)
 )
 
-;; TODO: Do we need the optional and hard coupling with PoX?
-;; FIXME: Replace with latest PoX contract.
+(define-read-only (get-cycle-peg-wallet (cycle (optional uint)))
+	(contract-call? .sbtc-registry get-cycle-peg-wallet (default-to (current-reward-cycle) cycle))
+)
+
 (define-read-only (get-peg-wallet-scriptpubkey (cycle (optional uint)))
-	(hashbytes-to-scriptpubkey (unwrap! (contract-call? .sbtc-registry get-cycle-peg-wallet (default-to (contract-call? 'ST000000000000000000002AMW42H.pox-2 current-pox-reward-cycle) cycle)) none))
+	(hashbytes-to-scriptpubkey (unwrap! (get-cycle-peg-wallet cycle)  none))
+)
+
+(define-read-only (get-peg-wallet-hashbytes-scriptpubkey (cycle (optional uint)))
+	(let ((hashbytes (unwrap! (get-cycle-peg-wallet cycle) none)))
+		(some {
+		hashbytes: hashbytes,
+		scriptpubkey: (try! (hashbytes-to-scriptpubkey hashbytes))
+		})
+	)
 )
