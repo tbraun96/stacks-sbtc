@@ -24,6 +24,8 @@
 ;; Dust limit placeholder for checking that pox-rewards were disbursed (in sats)
 (define-constant dust-limit u100)
 
+(define-constant pox-info (unwrap-panic (contract-call? .pox-3 get-pox-info)))
+
 ;;; errors ;;;
 (define-constant err-not-signer (err u0))
 (define-constant err-allowance-not-set (err u1))
@@ -63,7 +65,6 @@
 (define-constant err-not-protocol-caller (err u35))
 (define-constant err-threshold-percent-out-of-range (err u36))
 (define-constant err-threshold-to-scriptpubkey (err u37))
-
 
 ;;; variables ;;;
 
@@ -181,41 +182,38 @@
     (let 
         (
             (peg-state (contract-call? .sbtc-registry current-peg-state))
-            (current-cycle (contract-call? .pox-3 current-pox-reward-cycle))
-            (current-cycle-burn-height (contract-call? .pox-3 reward-cycle-to-burn-height current-cycle))
-            (next-cycle (+ u1 (contract-call? .pox-3 current-pox-reward-cycle)))
-            (next-cycle-burn-height (contract-call? .pox-3 reward-cycle-to-burn-height next-cycle))
+            (current-cycle (current-pox-reward-cycle))
+            (current-cycle-burn-height (reward-cycle-to-burn-height current-cycle))
+            (next-cycle (+ u1 current-cycle))
+            (next-cycle-burn-height (reward-cycle-to-burn-height next-cycle))
             (latest-disbursed-burn-height (var-get last-disbursed-burn-height))
             (start-voting-window (- next-cycle-burn-height (+ normal-voting-period-len normal-transfer-period-len normal-penalty-period-len)))
             (start-transfer-window (- next-cycle-burn-height (+ normal-transfer-period-len normal-penalty-period-len)))
             (start-penalty-window (- next-cycle-burn-height normal-penalty-period-len))
-            (current-window (begin 
-                 (asserts! (< latest-disbursed-burn-height burn-block-height) disbursement)
-                 (asserts! (and (> burn-block-height latest-disbursed-burn-height) (< burn-block-height start-voting-window)) registration)
-                 (asserts! (and (>= burn-block-height start-voting-window) (< burn-block-height start-transfer-window)) voting)
-                 (asserts! (and (>= burn-block-height start-transfer-window) (< burn-block-height start-penalty-window)) transfer)
-                 (asserts! (>= burn-block-height start-penalty-window) penalty)
-            ))
-
         )
 
         (asserts! peg-state bad-peg-state)
 
-        (asserts! (< latest-disbursed-burn-height burn-block-height) disbursement)
-
-        (asserts! (and (> burn-block-height latest-disbursed-burn-height) (< burn-block-height start-voting-window)) registration)
-
-        (asserts! (and (>= burn-block-height start-voting-window) (< burn-block-height start-transfer-window)) voting)
-
-        (asserts! (and (>= burn-block-height start-transfer-window) (< burn-block-height start-penalty-window)) transfer)
-
-        (asserts! (>= burn-block-height start-penalty-window) penalty)
-
-        0x00
-
+        (asserts! (>= burn-block-height start-voting-window)
+                    (if (or (< current-cycle-burn-height latest-disbursed-burn-height) (is-eq latest-disbursed-burn-height u0))
+                        registration
+                        disbursement))
+        (asserts! (>= burn-block-height start-transfer-window) voting)
+        (asserts! (>= burn-block-height start-penalty-window) transfer)
+        penalty ;; lasts until the end of the cycle
     )
 )
 
+
+;; Avoid loading pox-3 for conversion only
+(define-read-only (reward-cycle-to-burn-height (cycle uint))
+    (+ (get first-burnchain-block-height pox-info) (* cycle (get reward-cycle-length pox-info))))
+
+(define-read-only (burn-height-to-reward-cycle (height uint))
+    (/ (- height (get first-burnchain-block-height pox-info)) (get reward-cycle-length pox-info)))
+
+(define-read-only (current-pox-reward-cycle)
+    (burn-height-to-reward-cycle burn-block-height))
 
 
 ;;;;;;; Disbursement Functions ;;;;;;;
