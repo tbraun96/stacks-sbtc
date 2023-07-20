@@ -224,6 +224,20 @@
     { amount: uint }
 )
 
+
+;; MOCK
+;; Allow to set stx-account details for any user
+;; These values are used for PoX only
+(define-map mock-stx-account-details principal {unlocked: uint, locked: uint, unlock-height: uint})
+
+(define-read-only (get-stx-account (user principal))
+    (default-to (stx-account user) (map-get? mock-stx-account-details user)))
+
+(define-public (mock-set-stx-account (user principal) (details {unlocked: uint, locked: uint, unlock-height: uint}))
+    (if (map-set mock-stx-account-details user details)
+        (ok true) (err u9999))) ;; define manually the error type
+;; MOCK END
+
 ;; Getter for stacking-rejectors
 (define-read-only (get-pox-rejection (stacker principal) (reward-cycle uint))
     (map-get? stacking-rejectors { stacker: stacker, reward-cycle: reward-cycle }))
