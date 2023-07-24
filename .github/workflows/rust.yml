@@ -35,7 +35,6 @@ jobs:
         type: ['']
         # can't run on `windows-latests`
         os: [ubuntu-latest, buildjet-4vcpu-ubuntu-2204-arm, macos-latest]
-        type: ['', '--release']
     runs-on: ${{matrix.os}}
     steps:
     - uses: denoland/setup-deno@v1
