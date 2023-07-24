@@ -46,7 +46,7 @@
 
 (define-constant mock-tx-1 0x020000000001010052458c56fea00527237f73d6b7bb4cbaf1f5436c9d2673ae2e0164f4ad17d20000000000fdffffff010065cd1d00000000225120f855ca43402fb99cde0e3e634b175642561ff584fe76d1686630d8fd2ea93b360340000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f3c183c001a7321b74e2b6a7e949e6c4ad313035b1665095017007520f855ca43402fb99cde0e3e634b175642561ff584fe76d1686630d8fd2ea93b36ac41c050929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac074708f439116be919de13c6d3200d2305fcbdf5a9e7d2c079e85b427bb110e9000000000)
 (define-constant mock-wtxid-1 0x13d6ccd90dc236915d16dabe29fc02c00d4f5aad35577b43358a233d6e4620fd)
-(define-constant mock-txid-1 0x0168ee41db8a4766efe02bba1ebc0de320bc1b0abb7304f5f104818a9dd721cf)
+(define-constant mock-txid-1 0xcd2662154e6d76b2b2b92e70c0cac3ccf534f9b74eb5b89819ec509083d00a50)
 
 (define-constant mock-witness-index-1 u0)
 
@@ -59,10 +59,10 @@
 
 (define-constant mock-coinbase-witness-reserved-data 0x0000000000000000000000000000000000000000000000000000000000000000)
 
-(define-constant mock-coinbase-tx-1 0x020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff03016500ffffffff0200f2052a010000002251205444612a122cd09b4b3457d46c149a23d8685fb7d3aac61ea7eee8449555293b0000000000000000266a24aa21a9ed8a3bb68aa55850328ea8233754a147464b8580c15460c4ffb928ab23cf0d198b0120000000000000000000000000000000000000000000000000000000000000000000000000)
+(define-constant mock-coinbase-tx-1 0x020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff23036f18250418b848644d65726d61696465722046545721010000686d20000000000000ffffffff02edfe250000000000160014c035e789d9efffa10aa92e93f48f29b8cfb224c20000000000000000266a24aa21a9ed8a3bb68aa55850328ea8233754a147464b8580c15460c4ffb928ab23cf0d198b0120000000000000000000000000000000000000000000000000000000000000000000000000)
 (define-constant mock-coinbase-wtxid-1 0x0000000000000000000000000000000000000000000000000000000000000000)
 
-(define-constant mock-block-header-1 0x02000000000000000000000000000000000000000000000000000000000000000000000075b8bf903d0153e1463862811283ffbec83f55411c9fa5bd24e4207dee0dc1f1000000000000000000000000)
+(define-constant mock-block-header-1 0x000000000000000000000000000000000000000000000000000000000000000000000000d3dbd04a2912dd489751b19128a3ef428b9176512562eaf8ffa27a0223c8f215000000000000000000000000)
 (define-constant mock-block-header-hash-1-be 0x346993fc64b2a124a681111bb1f381e24dbef3cd362f0a40019238846c7ebf93)
 
 (define-read-only (get-sbtc-balance (who principal))
@@ -81,7 +81,8 @@
 		(try! (contract-call? .sbtc-registry insert-cycle-peg-wallet mock-peg-cycle mock-peg-wallet))
 		;; Mine a fake burnchain block that includes mock transactions
 		;;(try! (contract-call? .sbtc-testnet-debug-controller simulate-mine-solo-burnchain-block mock-burnchain-height (list mock-tx-1)))
-		(unwrap! (contract-call? .clarity-bitcoin mock-add-burnchain-block-header-hash mock-burnchain-height mock-block-header-hash-1-be) (err u112233))
+		;; (unwrap! (contract-call? .clarity-bitcoin mock-add-burnchain-block-header-hash mock-burnchain-height mock-block-header-hash-1-be) (err u112233))
+		(unwrap! (contract-call? .clarity-bitcoin mock-add-burnchain-block-header-hash mock-burnchain-height 0x56c235c25a7b8acee8fb606f6e0d493bd5e45848a90a9e4cc71a266627db5842) (err u112233))
 		(ok true)
 	)
 )
@@ -177,7 +178,6 @@
 			mock-coinbase-witness-reserved-data
 			mock-witness-index-1
 			mock-coinbase-tx-1 ;; ctx
-			;; FIXME: something strange here, can pass any buff in the list and the test will pass.
 			(list mock-txid-1) ;; cproof
 			)))
 		(unwrap! result (err {msg: "Expected ok, got err", actual: (some result)}))
@@ -201,7 +201,6 @@
 			mock-coinbase-witness-reserved-data
 			mock-witness-index-1
 			mock-coinbase-tx-1 ;; ctx
-			;; FIXME: something strange here, can pass any buff in the list and the test will pass.
 			(list mock-txid-1) ;; cproof
 			))
 		(result2 (contract-call? .sbtc-peg-in-processor complete-peg-in
@@ -216,9 +215,9 @@
 			mock-coinbase-witness-reserved-data
 			mock-witness-index-1
 			mock-coinbase-tx-1 ;; ctx
-			;; FIXME: something strange here, can pass any buff in the list and the test will pass.
 			(list mock-txid-1) ;; cproof
-			)))
+			))
+      )
 		(unwrap! result (err {msg: "Expected ok, got err", actual: (some result)}))
 		(asserts! (is-eq (get-sbtc-balance wallet-1) mock-value-tx-1) (err {msg: "User did not receive the expected sBTC", actual: none}))
 		(asserts! (is-eq result2 err-burn-tx-already-processed) (err {msg: "Second call should have failed with err-burn-tx-already-processed", actual: (some result2)}))
