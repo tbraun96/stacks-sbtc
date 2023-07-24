@@ -8,9 +8,7 @@ use bitcoin::{
 };
 use hashbrown::HashMap;
 use libc::pid_t;
-use rand::distributions::Alphanumeric;
 use rand::rngs::OsRng;
-use rand::Rng;
 use std::{
     env,
     fmt::Debug,
@@ -19,7 +17,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     str::FromStr,
-    thread::{self, sleep},
+    thread::{self},
     time::{Duration, SystemTime},
 };
 use ureq::serde::Serialize;
@@ -36,9 +34,55 @@ use nix::unistd::Pid;
 use ureq::serde_json::Value;
 use ureq::{self, json, post};
 
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
+use uuid::Uuid;
+
 const BITCOIND_URL: &str = "http://abcd:abcd@localhost";
 const MIN_PORT: u16 = 20000;
 const MAX_PORT: u16 = 25000;
+
+// Lazily instantiate a static port factory that will only supply ports that haven't already been
+// claimed.
+//
+// Note: This structure will be insufficient if multiple rust files assign ports.
+static CLAIMED_PORT_FACTORY: Mutex<Lazy<ClaimedPortFactory>> =
+    Mutex::new(Lazy::new(ClaimedPortFactory::default));
+
+/// A structure intended to be a static singleton that claims ports to avoid collisions in other threads.
+#[derive(Default)]
+pub struct ClaimedPortFactory {
+    /// Structure tracking claimed ports
+    claimedports: HashMap<u16, Uuid>,
+}
+
+impl ClaimedPortFactory {
+    /// Attempts to claim a port in the specified range.
+    ///
+    /// Returns `None` if no port can be successfully claimed.
+    pub fn claim_port_in_range(
+        &mut self,
+        claimant: Uuid,
+        minport: u16,
+        maxport: u16,
+    ) -> Option<u16> {
+        (minport..=maxport).find(|port| {
+            Self::port_is_open(*port)
+                .map(|_listener| self.claimedports.try_insert(*port, claimant).is_ok())
+                .unwrap_or_default()
+        })
+    }
+
+    /// Drops all ports claimed by the specified claimant.
+    pub fn drop_all_ports_for_claimant(&mut self, claimant: Uuid) {
+        self.claimedports.retain(|_port, uuid| !claimant.eq(uuid))
+    }
+
+    /// Returns `true` if the specified port is open.
+    fn port_is_open(port: u16) -> Option<TcpListener> {
+        TcpListener::bind(("127.0.0.1", port)).ok()
+    }
+}
 
 pub struct Process {
     pub datadir: PathBuf,
@@ -47,16 +91,11 @@ pub struct Process {
 
 impl Process {
     pub fn new(cmd: &str, args: &[&str], envs: &HashMap<String, String>) -> Self {
+        // Create unique test id to track assets for this process.
+        let testid: Uuid = Uuid::new_v4();
+
         let mut datadir: PathBuf = PathBuf::from_str("/tmp/").unwrap();
-        let tempfile: String = "test_utils_"
-            .chars()
-            .chain(
-                rand::thread_rng()
-                    .sample_iter(&Alphanumeric)
-                    .take(16)
-                    .map(char::from),
-            )
-            .collect();
+        let tempfile: String = format!("test_utils_{}", testid);
 
         datadir = datadir.join(tempfile);
         create_dir(&datadir).unwrap();
@@ -102,19 +141,22 @@ impl Drop for Process {
 }
 
 pub struct BitcoinProcess {
+    testid: Uuid,
     url: Url,
     datadir: PathBuf,
     child: Child,
 }
 
 impl BitcoinProcess {
-    fn spawn(port: u16, datadir: &Path) -> Child {
+    fn spawn(port: u16, rpcport: u16, datadir: &Path) -> Child {
+        // Spin up the bitcoind command line program.
         let bitcoind_child = Command::new("bitcoind")
             .arg("-regtest")
-            .arg("-bind=0.0.0.0:0")
+            .arg("-bind=0.0.0.0")
             .arg("-rpcuser=abcd")
             .arg("-rpcpassword=abcd")
-            .arg(format!("-rpcport={}", port))
+            .arg(format!("-port={}", port))
+            .arg(format!("-rpcport={}", rpcport))
             .arg(format!("-datadir={}", datadir.to_str().unwrap()))
             .stdout(Stdio::null())
             .spawn()
@@ -175,43 +217,35 @@ impl BitcoinProcess {
         Err("connection timeout".to_string())
     }
 
-    fn port_is_available(port: u16) -> Option<TcpListener> {
-        TcpListener::bind(("127.0.0.1", port)).ok()
-    }
-
-    fn find_port() -> Option<u16> {
-        (MIN_PORT..=MAX_PORT).find(|port| {
-            // Keep the port bound for a short amount of time so other tests can pick different ones
-            Self::port_is_available(*port)
-                .map(|_listener| {
-                    sleep(Duration::from_millis(100));
-                    true
-                })
-                .unwrap_or_default()
-        })
-    }
-
     pub fn new() -> Self {
-        let mut url: Url = BITCOIND_URL.parse().unwrap();
-        url.set_port(Self::find_port()).unwrap();
+        // Create unique test id to track assets for this process.
+        let testid: Uuid = Uuid::new_v4();
 
+        // Claim ports.
+        let port: Option<u16> = CLAIMED_PORT_FACTORY
+            .lock()
+            .unwrap()
+            .claim_port_in_range(testid, MIN_PORT, MAX_PORT);
+        let rpcport: Option<u16> = CLAIMED_PORT_FACTORY
+            .lock()
+            .unwrap()
+            .claim_port_in_range(testid, MIN_PORT, MAX_PORT);
+
+        // Generate url.
+        let mut url: Url = BITCOIND_URL.parse().unwrap();
+        url.set_port(rpcport).unwrap();
+
+        // Create temp directory for tests.
         let mut datadir: PathBuf = PathBuf::from_str("/tmp/").unwrap();
-        let tempfile: String = "bitcoind_test_"
-            .chars()
-            .chain(
-                rand::thread_rng()
-                    .sample_iter(&Alphanumeric)
-                    .take(16)
-                    .map(char::from),
-            )
-            .collect();
+        let tempfile: String = format!("test_utils_{}", testid);
 
         datadir = datadir.join(tempfile);
         create_dir(&datadir).unwrap();
 
-        let child = Self::spawn(url.port().unwrap(), &datadir);
+        let child = Self::spawn(port.unwrap(), rpcport.unwrap(), &datadir);
 
         let this = Self {
+            testid,
             url,
             datadir,
             child,
@@ -230,6 +264,10 @@ impl Drop for BitcoinProcess {
     fn drop(&mut self) {
         self.child.kill().unwrap();
         remove_dir_all(&self.datadir).unwrap();
+        CLAIMED_PORT_FACTORY
+            .lock()
+            .unwrap()
+            .drop_all_ports_for_claimant(self.testid);
     }
 }
 
@@ -247,7 +285,7 @@ pub fn generate_wallet(
     let keypair = KeyPair::new(&secp, &mut rand::thread_rng());
 
     let secret_key = keypair.secret_key();
-    let private_key = PrivateKey::new(secret_key, Network::Regtest);
+    let private_key: PrivateKey = PrivateKey::new(secret_key, Network::Regtest);
     let public_key = PublicKey::from_private_key(&secp, &private_key);
     let xonly_public_key = keypair.x_only_public_key().0;
     let address = if is_taproot {
