@@ -1,4 +1,6 @@
+(define-constant version-P2WPKH 0x04)
 (define-constant version-P2TR 0x06)
+(define-constant version-invalid 0x99)
 
 ;; @name Extract protocol witness script for peg-out reveal transactions.
 (define-public (test-find-peg-out-reveal-protocol-unlock-witness)
@@ -18,4 +20,23 @@
 			)
 		(err "Did not match the expected value")
 	))
+)
+
+
+;; @name Convert hashbytes to scriptPubkey with non-p2tr version
+(define-public (test-hashbytes-to-scriptpubkey-with-P2WPKH-version)
+	(let ((expected (some 0x0020f855ca43402fb99cde0e3e634b175642561ff584fe76d1686630d8fd2ea93b36))
+		(actual (contract-call? .sbtc-btc-tx-helper hashbytes-to-scriptpubkey { version: version-P2WPKH, hashbytes: 0xf855ca43402fb99cde0e3e634b175642561ff584fe76d1686630d8fd2ea93b36 })))
+		(asserts! (is-eq actual expected)
+			(err {actual: actual, expected: expected}))
+		(ok true))
+)
+
+;; @name test error handling for hashbytes to scriptPubkey with invalid version
+(define-public (test-hashbytes-to-scriptpubkey-with-invalid-version)
+	(let ((actual (contract-call? .sbtc-btc-tx-helper hashbytes-to-scriptpubkey { version: version-invalid, hashbytes: 0xf855ca43402fb99cde0e3e634b175642561ff584fe76d1686630d8fd2ea93b36 })))
+
+		(asserts! (is-eq actual none)
+			(err {actual: actual, expected: none}))
+		(ok true))
 )
