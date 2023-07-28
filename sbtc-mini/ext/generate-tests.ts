@@ -124,7 +124,7 @@ function generateTest(contractPrincipal: string, testFunction: string, annotatio
 	async fn(chain: Chain, accounts: Map<string, Account>) {
 		const deployer = accounts.get("deployer")!;
 		bootstrap && bootstrap(chain, deployer);
-		let callerAddress = ${annotations.caller ? (annotations.caller[0] === "'" ? `"${(annotations.caller as string).substring(1)}"` : `accounts.get('${annotations.caller}')!.address`) : `accounts.get('deployer')!.address`};
+		const callerAddress = ${annotations.caller ? (annotations.caller[0] === "'" ? `"${(annotations.caller as string).substring(1)}"` : `accounts.get('${annotations.caller}')!.address`) : `accounts.get('deployer')!.address`};
 		${mineBlocksBefore >= 1
 			? generateSpecialMineBlock(mineBlocksBefore, contractPrincipal, testFunction, annotations)
 			: generateNormalMineBlock(contractPrincipal, testFunction, annotations)}
