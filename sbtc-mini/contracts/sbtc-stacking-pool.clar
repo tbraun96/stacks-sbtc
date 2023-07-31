@@ -154,6 +154,10 @@
 
 ;;;;; Read-Only Functions ;;;;;
 
+;; use MOCK function
+(define-read-only (get-stx-account (user principal))
+    (contract-call? .pox-3 get-stx-account user))
+
 ;; Check if caller is a protocol caller
 (define-read-only (is-protocol-caller)
 	(contract-call? .sbtc-controller is-protocol-caller contract-caller)
@@ -311,7 +315,7 @@
 (define-public (signer-pre-register (amount-ustx uint) (pox-addr { version: (buff 1), hashbytes: (buff 32)}))
     (let 
         (
-            (signer-account (stx-account tx-sender))
+            (signer-account (get-stx-account tx-sender))
             (new-signer tx-sender)
             (signer-unlocked-balance (get unlocked signer-account))
             (signer-allowance-status (unwrap! (contract-call? .pox-3 get-allowance-contract-callers tx-sender (as-contract tx-sender)) err-allowance-not-set))
@@ -338,10 +342,12 @@
         (asserts! (is-eq (get-current-window) registration)  err-not-in-registration-window)
 
         ;; Delegate-stx to their PoX address
-        (unwrap! (contract-call? .pox-3 delegate-stx amount-ustx (as-contract tx-sender) (some burn-block-height) (some pox-addr)) err-pre-registration-delegate-stx)
+        (unwrap! (contract-call? .pox-3 delegate-stx amount-ustx (as-contract tx-sender) none (some pox-addr)) err-pre-registration-delegate-stx)
 
         ;; Delegate-stack-stx for next cycle
-        (unwrap! (as-contract (contract-call? .pox-3 delegate-stack-stx new-signer amount-ustx pox-addr burn-block-height u1)) err-pre-registration-delegate-stack-stx)
+        (match (as-contract (contract-call? .pox-3 delegate-stack-stx new-signer amount-ustx pox-addr burn-block-height u1)) 
+            success true
+            error (try! (if false (ok true) (err (to-uint error)))))
 
         ;; Stack aggregate-commit
         ;; As pointed out by Friedger, this fails when the user is already stacking. Match err-branch takes care of this with stack-delegate-increase instead.
@@ -355,7 +361,9 @@
                     (asserts! (>= amount-ustx (get locked signer-account)) err-decrease-forbidden)
 
                     ;; Delegate-stack-increase for next cycle so that there is no cooldown
-                    (unwrap! (contract-call? .pox-3 delegate-stack-increase new-signer pox-addr (- amount-ustx (get locked signer-account))) err-pre-registration-stack-increase)
+                    (try! (match (as-contract (contract-call? .pox-3 delegate-stack-increase new-signer pox-addr (- amount-ustx (get locked signer-account))))
+                    success (ok true)
+                    error (err (to-uint error))))
                     true
                 )
         )
@@ -370,7 +378,7 @@
 (define-public (signer-register (pre-registered-signer principal) (amount-ustx uint) (pox-addr { version: (buff 1), hashbytes: (buff 32)}) (public-key (buff 32)))
     (let 
         (
-            (signer-account (stx-account pre-registered-signer))
+            (signer-account (get-stx-account pre-registered-signer))
             (signer-unlocked-balance (get unlocked signer-account))
             (signer-allowance-status (unwrap! (contract-call? .pox-3 get-allowance-contract-callers pre-registered-signer (as-contract tx-sender)) err-allowance-not-set))
             (signer-allowance-end-height (get until-burn-ht signer-allowance-status))
@@ -495,6 +503,7 @@
                         votes-in-ustx: (get amount next-pool-signer),
                         num-signer: u1,
                 })
+                
                 ;; Update pool map by appending wallet-candidate to list of candidates
                 (map-set pool next-cycle (merge 
                     next-pool

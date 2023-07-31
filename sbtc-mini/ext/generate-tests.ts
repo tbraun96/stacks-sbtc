@@ -1,48 +1,13 @@
 import { Clarinet, Contract, Account } from 'https://deno.land/x/clarinet@v1.7.0/index.ts';
+import { extractTestAnnotations, getContractName } from './utils/clarity-parser.ts';
+import { defaultDeps, generateBootstrapFile, warningText } from './utils/generate.ts';
 
 const sourcebootstrapFile = './tests/bootstrap.ts';
 const targetFolder = '.test';
 
-const warningText = `// Code generated using \`clarinet run ./scripts/generate-tests.ts\`
-// Manual edits will be lost.`;
-
-const defaultDeps = `import { Clarinet, Tx, Chain, Account, Block, types } from 'https://deno.land/x/clarinet@v1.7.0/index.ts';
-import { assertEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
-
-export { Clarinet, Tx, Chain, types, assertEquals };
-export type { Account };
-
-const dirOptions = { strAbbreviateSize: Infinity, depth: Infinity, colors: true };
-
-export function printEvents(block: Block) {
-	block.receipts.map(({ events }) => events && events.map(event => console.log(Deno.inspect(event, dirOptions))));
-}
-`;
-
-function getContractName(contractId: string) {
-	return contractId.split('.')[1];
-}
-
 function isTestContract(contractName: string) {
-	return contractName.substring(contractName.length - 5) === "_test";
-}
-
-const functionRegex = /^([ \t]{0,};;[ \t]{0,}@[\s\S]+?)\n[ \t]{0,}\(define-public[\s]+\((.+?)[ \t|)]/gm;
-const annotationsRegex = /^;;[ \t]{1,}@([a-z-]+)(?:$|[ \t]+?(.+?))$/;
-
-function extractTestAnnotations(contractSource: string) {
-	const functionAnnotations = {};
-	const matches = contractSource.replace(/\r/g, "").matchAll(functionRegex);
-	for (const [, comments, functionName] of matches) {
-		functionAnnotations[functionName] = {};
-		const lines = comments.split("\n");
-		for (const line of lines) {
-			const [, prop, value] = line.match(annotationsRegex) || [];
-			if (prop)
-				functionAnnotations[functionName][prop] = value ?? true;
-		}
-	}
-	return functionAnnotations;
+	return contractName.substring(contractName.length - 5) === "_test" &&
+		contractName.substring(contractName.length - 10) !== "_flow_test";
 }
 
 Clarinet.run({
@@ -89,10 +54,15 @@ Clarinet.run({
 
 type FunctionAnnotations = { [key: string]: string | boolean };
 
+// generates contract call ts code for prepare function in mineBlock
 function generatePrepareTx(contractPrincipal: string, annotations: FunctionAnnotations) {
 	return `Tx.contractCall('${contractPrincipal}', '${annotations['prepare']}', [], deployer.address)`;
 }
 
+/**
+ * generates a mineBlock ts code containing optional prepare function
+ * and the test function call
+ */
 function generateNormalMineBlock(contractPrincipal: string, testFunction: string, annotations: FunctionAnnotations) {
 	return `let block = chain.mineBlock([
 		${annotations['prepare'] ? `${generatePrepareTx(contractPrincipal, annotations)},` : ''}
@@ -100,6 +70,14 @@ function generateNormalMineBlock(contractPrincipal: string, testFunction: string
 	]);`;
 }
 
+/**
+ * Generates a mineBlock ts code containing
+ * - optional block with prepare function,
+ * - several empty blocks and
+ * - the test function call
+ *
+ * supports the `@print events` annotations
+ */
 function generateSpecialMineBlock(mineBlocksBefore: number, contractPrincipal: string, testFunction: string, annotations: FunctionAnnotations) {
 	let code = ``;
 	if (annotations['prepare']) {
@@ -117,6 +95,13 @@ function generateSpecialMineBlock(mineBlocksBefore: number, contractPrincipal: s
 		${annotations['print'] === 'events' ? 'printEvents(block);' : ''}`;
 }
 
+/**
+ * Generates the ts code for a unit test
+ * @param contractPrincipal
+ * @param testFunction
+ * @param annotations
+ * @returns
+ */
 function generateTest(contractPrincipal: string, testFunction: string, annotations: FunctionAnnotations) {
 	const mineBlocksBefore = parseInt(annotations['mine-blocks-before'] as string) || 0;
 	return `Clarinet.test({
@@ -132,17 +117,4 @@ function generateTest(contractPrincipal: string, testFunction: string, annotatio
 	}
 });
 `;
-}
-
-async function generateBootstrapFile(bootstrapFile: string) {
-	let bootstrapSource = 'export function bootstrap(){}';
-	if (bootstrapFile) {
-		try {
-			bootstrapSource = await Deno.readTextFile(bootstrapFile);
-		}
-		catch (error) {
-			console.error(`Could not read bootstrap file ${bootstrapFile}`, error);
-		}
-	}
-	return `${warningText}\n\n${bootstrapSource}`;
 }
