@@ -55,7 +55,7 @@
 	(cproof (list 14 (buff 32))))
     (let 
         (
-            (current-cycle (contract-call? 'SP000000000000000000002Q6VF78.pox-2 current-pox-reward-cycle))
+            (current-cycle (contract-call? .pox-3 current-pox-reward-cycle))
             (current-pool-unwrapped (unwrap! (contract-call? .sbtc-stacking-pool get-current-cycle-pool) err-current-pool-not-found))
             (current-threshold-wallet (unwrap! (get threshold-wallet current-pool-unwrapped) err-current-threshold-wallet))
             (current-threshold-version (get version current-threshold-wallet))
