@@ -23,6 +23,8 @@
 
 ;; Dust limit placeholder for checking that pox-rewards were disbursed (in sats)
 (define-constant dust-limit u100)
+;; Signer minimal is 10k STX
+(define-constant signer-minimal u10000000000)
 
 (define-constant pox-info (unwrap-panic (contract-call? .pox-3 get-pox-info)))
 
@@ -85,9 +87,6 @@
 
 ;; Current cycle threshold wallet
 (define-data-var threshold-wallet { version: (buff 1), hashbytes: (buff 32) } { version: 0x00, hashbytes: 0x00 })
-
-;; Current signer minimal
-(define-data-var signer-minimal uint u0)
 
 ;; Same burnchain and PoX constants as mainnet
 (define-constant first-burn-block-height u666050)
@@ -327,7 +326,7 @@
         )
 
         ;; Assert that amount-ustx is greater than signer-minimal
-        (asserts! (>= amount-ustx (var-get signer-minimal)) err-not-enough-stacked)
+        (asserts! (>= amount-ustx signer-minimal) err-not-enough-stacked)
 
         ;; Assert signer-allowance-end-height is either none or block-height is less than signer-allowance-end-height
         (asserts! (or 
