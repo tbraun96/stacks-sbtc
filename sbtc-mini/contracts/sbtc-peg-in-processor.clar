@@ -1,17 +1,16 @@
-(define-constant err-peg-in-expired (err u500))
-(define-constant err-not-a-peg-wallet (err u501))
-(define-constant err-invalid-spending-pubkey (err u503))
-(define-constant err-peg-value-not-found (err u505))
-(define-constant err-missing-witness (err u506))
-(define-constant err-unlock-script-not-found-or-invalid (err u507))
+(define-constant err-not-a-peg-wallet (err u4001)) ;; There is no peg wallet address for the specified wallet.
+(define-constant err-invalid-spending-pubkey (err u4003)) ;; The recipient of the BTC is not the same as the pubkey that unlocked the spending script.
+(define-constant err-peg-value-not-found (err u4005)) ;; There was no output containing the peg wallet scriptPubKey.
+(define-constant err-missing-witness (err u4006)) ;; The Taproot witness was missing.
+(define-constant err-unlock-script-not-found-or-invalid (err u4007)) ;; The unlock script at the specified witness index did not exist or was invalid. (Not according to the sBTC spec.)
 
-(define-constant err-script-invalid-opcode (err u510))
-(define-constant err-script-invalid-version (err u511))
-(define-constant err-script-not-op-drop (err u512))
-(define-constant err-script-checksig-missing (err u513))
-(define-constant err-script-missing-pubkey (err u514))
-(define-constant err-script-invalid-principal (err u515))
-(define-constant err-script-invalid-length (err u516))
+(define-constant err-script-invalid-opcode (err u4010)) ;; The opcode in the unlock script was invalid.
+(define-constant err-script-invalid-version (err u4011)) ;; The version in the unlock script was invalid.
+(define-constant err-script-not-op-drop (err u4012)) ;; The script does not contain OP_DROP at the expected offset.
+(define-constant err-script-checksig-missing (err u4013)) ;; The script does not contain OP_CHECKSIG at the expected offset.
+(define-constant err-script-missing-pubkey (err u4014)) ;; The script does not contain a Taproot pubkey.
+(define-constant err-script-invalid-principal (err u4015)) ;; The encoded Stacks principal inside the script is invalid.
+(define-constant err-script-invalid-length (err u4016)) ;; The length of the script is different from what is expected.
 
 (define-constant type-standard-principal 0x05)
 (define-constant type-contract-principal 0x06)

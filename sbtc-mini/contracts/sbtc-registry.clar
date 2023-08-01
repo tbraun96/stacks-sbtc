@@ -10,13 +10,13 @@
 (define-constant penalty-new-wallet-consensus-failed 0x01)
 (define-constant penalty-peg-transfer-failed 0x02)
 
-(define-constant err-burn-tx-already-processed (err u600))
-(define-constant err-peg-wallet-already-set (err u602))
-(define-constant err-minimum-burnchain-confirmations-not-reached (err u603))
-(define-constant err-not-settled-state (err u604))
-(define-constant err-invalid-txid-length (err u605))
-(define-constant err-unknown-peg-out-request (err u606))
-(define-constant err-peg-out-not-pending (err u607))
+(define-constant err-burn-tx-already-processed (err u2000)) ;; A burnchain TXID was processed (seen) before.
+(define-constant err-peg-wallet-already-set (err u2002)) ;; A peg wallet address for the specified cycle was already set.
+(define-constant err-minimum-burnchain-confirmations-not-reached (err u2003)) ;; The burnchain transaction did not yet reach the minimum amount of confirmation.
+(define-constant err-not-settled-state (err u2004)) ;; The state passed to function `get-and-settle-pending-peg-out-request` was not a settled state. (Fulfilled or cancelled.)
+(define-constant err-invalid-txid-length (err u2005)) ;; The passed TXID byte length was not equal to 32.
+(define-constant err-unknown-peg-out-request (err u2006)) ;; The peg-out request ID passed to `get-and-settle-pending-peg-out-request` does not exist.
+(define-constant err-peg-out-not-pending (err u2007)) ;; The peg-out request ID passed to `get-and-settle-pending-peg-out-request` is not in a pending state.
 
 (define-data-var burnchain-confirmations-required uint u4)
 (define-map processed-burn-wtxids (buff 32) bool)

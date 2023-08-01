@@ -16,7 +16,7 @@
 			((registration-result
 				(contract-call? .sbtc-stacking-pool signer-pre-register u1000 mock-pox-reward-wallet-1)))
 			(asserts! (is-err registration-result) registration-result)
-			(asserts! (is-eq (unwrap-err! registration-result registration-result) u1) registration-result))
+			(asserts! (is-eq (unwrap-err! registration-result registration-result) u6001) registration-result))
 			(ok true)))
 
 ;; @name transfer for unknown pool fails
@@ -25,10 +25,10 @@
 		(result (contract-call? .sbtc-peg-transfer relay-handoff-fulfillment u2101 0x 0x u1 u1 (list) 0x 0x 0x (list))))
 		(asserts! (is-err result)
 			(err "Should return error"))
-		(asserts! (is-eq (unwrap-err-panic result) u0)
+		(asserts! (is-eq (unwrap-err-panic result) u7000)
 			(err (concat "Should return err u0, not " (error-to-string (unwrap-err-panic result)))))
 		(ok true))))
 
 ;; errors from sbtc-peg-transfer
 (define-private (error-to-string (error uint))
-	(unwrap! (element-at? (list "err-current-pool-not-found") error) "unknown error"))
+	(unwrap! (element-at? (list "err-current-pool-not-found") (- error u7000)) "unknown error"))

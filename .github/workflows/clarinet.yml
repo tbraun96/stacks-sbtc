@@ -40,6 +40,12 @@ jobs:
         working-directory: ./sbtc-mini
         run: ./scripts/test.sh
 
+      - name: Run error code table check for sbtc-mini
+        working-directory: ./sbtc-mini
+        env:
+          EXTRACT_CHECK: 1
+        run: ./scripts/extract-error-codes.sh
+
       - name: Print coverage report
         working-directory: ./sbtc-mini
         run: sudo apt-get install -qq -y lcov html2text > /dev/null && genhtml .coverage/lcov.info -o .coverage/ && html2text .coverage/contracts/index.html

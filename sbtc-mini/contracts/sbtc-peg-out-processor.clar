@@ -4,14 +4,14 @@
 
 (define-constant sbtc-token-burnchain-lock-time u2100)
 
-(define-constant err-token-lock-failed (err u700))
-(define-constant err-token-unlock-failed (err u701))
-(define-constant err-unknown-peg-out-request (err u702))
-(define-constant err-peg-out-not-epxired (err u703))
-(define-constant err-peg-out-not-requested (err u704))
-(define-constant err-wrong-destination (err u705))
-(define-constant err-unacceptable-expiry-height (err u706))
-(define-constant err-wrong-value (err u707))
+(define-constant err-token-lock-failed (err u5700))
+(define-constant err-token-unlock-failed (err u5701))
+(define-constant err-unknown-peg-out-request (err u5702))
+(define-constant err-peg-out-not-epxired (err u5703))
+(define-constant err-peg-out-not-requested (err u5704))
+(define-constant err-wrong-destination (err u5705))
+(define-constant err-unacceptable-expiry-height (err u5706))
+(define-constant err-wrong-value (err u5707))
 
 (define-read-only (extract-request-data (tx (buff 4096)) (p2tr-unlock-script (buff 128)))
 	;; It verifies the tapscript is the expected format.
