@@ -61,11 +61,11 @@
 
 (define-constant mock-coinbase-witness-reserved-data 0x0000000000000000000000000000000000000000000000000000000000000000)
 
-(define-constant mock-coinbase-tx-1 0x020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff23036f18250418b848644d65726d61696465722046545721010000686d20000000000000ffffffff02edfe250000000000160014c035e789d9efffa10aa92e93f48f29b8cfb224c20000000000000000266a24aa21a9ed8a3bb68aa55850328ea8233754a147464b8580c15460c4ffb928ab23cf0d198b0120000000000000000000000000000000000000000000000000000000000000000000000000)
+(define-constant mock-coinbase-tx-1 0x01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff1e0383a02519444d47426c6f636b636861696e309e3c092400000000000000ffffffff029e49250000000000160014b23716e183ba0949c55d6cac21a3e94176eed1120000000000000000266a24aa21a9ed8a3bb68aa55850328ea8233754a147464b8580c15460c4ffb928ab23cf0d198b0120000000000000000000000000000000000000000000000000000000000000000000000000)
 (define-constant mock-coinbase-wtxid-1 0x0000000000000000000000000000000000000000000000000000000000000000)
 
-(define-constant mock-block-header-1 0x000000000000000000000000000000000000000000000000000000000000000000000000d3dbd04a2912dd489751b19128a3ef428b9176512562eaf8ffa27a0223c8f215000000000000000000000000)
-(define-constant mock-block-header-hash-1-be 0x346993fc64b2a124a681111bb1f381e24dbef3cd362f0a40019238846c7ebf93)
+(define-constant mock-block-header-1 0x0000000000000000000000000000000000000000000000000000000000000000000000000b5c59d28b48942bba392cabfc2459c2842e6549e85bc2714b0ebce5c1c925d7000000000000000000000000)
+(define-constant mock-block-header-hash-1-be 0x6f028d4c95181966e53930fb034301081aaefed6f043ea1d86b329274a354b92)
 
 (define-read-only (get-sbtc-balance (who principal))
 	(unwrap! (contract-call? .sbtc-token get-balance who) u0)
@@ -82,9 +82,8 @@
 		;; Add mock peg wallet adress to registry for test cycle
 		(try! (contract-call? .sbtc-registry insert-cycle-peg-wallet mock-peg-cycle mock-peg-wallet))
 		;; Mine a fake burnchain block that includes mock transactions
-		;;(try! (contract-call? .sbtc-testnet-debug-controller simulate-mine-solo-burnchain-block mock-burnchain-height (list mock-tx-1)))
-		;; (unwrap! (contract-call? .clarity-bitcoin mock-add-burnchain-block-header-hash mock-burnchain-height mock-block-header-hash-1-be) (err u112233))
-		(unwrap! (contract-call? .clarity-bitcoin mock-add-burnchain-block-header-hash mock-burnchain-height 0x56c235c25a7b8acee8fb606f6e0d493bd5e45848a90a9e4cc71a266627db5842) (err u112233))
+		(try! (contract-call? .sbtc-testnet-debug-controller simulate-mine-solo-burnchain-block mock-burnchain-height (list mock-tx-1)))
+		(unwrap! (contract-call? .clarity-bitcoin mock-add-burnchain-block-header-hash mock-burnchain-height mock-block-header-hash-1-be) (err u112233))
 		(ok true)
 	)
 )
@@ -168,7 +167,9 @@
 ;; @name Test peg-in reveal proof (mints sBTC)
 ;; @mine-blocks-before 5
 (define-public (test-peg-in-reveal)
-	(let ((result (contract-call? .sbtc-peg-in-processor complete-peg-in
+	(let (
+    (result
+      (contract-call? .sbtc-peg-in-processor complete-peg-in
 			mock-peg-cycle
 			mock-burnchain-height ;; burn-height
 			mock-tx-1 ;; tx
@@ -181,7 +182,9 @@
 			mock-witness-index-1
 			mock-coinbase-tx-1 ;; ctx
 			(list mock-txid-1) ;; cproof
-			)))
+			)
+      )
+    )
 		(unwrap! result (err {msg: "Expected ok, got err", actual: (some result)}))
 		(asserts! (is-eq (get-sbtc-balance wallet-1) mock-value-tx-1) (err {msg: "User did not receive the expected sBTC", actual: none}))
 		(ok true)
