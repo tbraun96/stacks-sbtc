@@ -34,6 +34,9 @@
 (define-constant ok-voted (ok u2))
 
 ;;; errors ;;;
+(define-constant const-first-pox-error   u60000)
+(define-constant const-second-pox-error u600000)
+
 (define-constant err-not-signer (err u6000))
 (define-constant err-allowance-not-set (err u6001))
 (define-constant err-allowance-height (err u6002))
@@ -76,6 +79,7 @@
 (define-constant err-wallet-consensus-reached-execution (err u6039))
 (define-constant err-vote-or (err u6040))
 (define-constant err-candidates-overflow (err u6041))
+(define-constant err-stacking-permission-denied (err u6042))
 
 ;;; variables ;;;
 
@@ -102,32 +106,32 @@
 
 ;; Map that tracks all relevant stacker data for a given pool (by cycle index)
 (define-map pool uint {
-    stackers: (list 100 principal),
-    stacked: uint,
-    threshold-wallet-candidates: (list 100 { version: (buff 1), hashbytes: (buff 32) }),
-    threshold-wallet: (optional { version: (buff 1), hashbytes: (buff 32) }),
-    last-aggregation: (optional uint),
-    reward-index: (optional uint),
-    balance-transferred: bool,
-    rewards-disbursed: bool
+	stackers: (list 100 principal),
+	stacked: uint,
+	threshold-wallet-candidates: (list 100 { version: (buff 1), hashbytes: (buff 32) }),
+	threshold-wallet: (optional { version: (buff 1), hashbytes: (buff 32) }),
+	last-aggregation: (optional uint),
+	reward-index: (optional uint),
+	balance-transferred: bool,
+	rewards-disbursed: bool
 })
 
 ;; Map that tracks all stacker/signer data for a given principal & pool (by cycle index)
 (define-map signer {stacker: principal, pool: uint} {
-    amount: uint,
-    ;; pox-addrs must be unique per cycle
-    pox-addr: { version: (buff 1), hashbytes: (buff 32) },
-    vote: (optional { version: (buff 1), hashbytes: (buff 32) }),
-    public-key: (buff 33),
-    lock-period: uint,
-    btc-earned: (optional uint)
+	amount: uint,
+	;; pox-addrs must be unique per cycle
+	pox-addr: { version: (buff 1), hashbytes: (buff 32) },
+	vote: (optional { version: (buff 1), hashbytes: (buff 32) }),
+	public-key: (buff 33),
+	lock-period: uint,
+	btc-earned: (optional uint)
 })
 
 ;; Map that tracks all votes per cycle
 (define-map votes-per-cycle {cycle: uint, wallet-candidate: { version: (buff 1), hashbytes: (buff 32) } } {
-    aggregate-commit-index: (optional uint),
-    votes-in-ustx: uint,
-    num-signer: uint,
+	aggregate-commit-index: (optional uint),
+	votes-in-ustx: uint,
+	num-signer: uint,
 })
 
 ;; Map that tracks all pre-signer stacker/signer sign-ups for a given principal & pool (by cycle index)
@@ -139,10 +143,10 @@
 ;; Map of reward cyle to block height of last commit
 (define-map last-aggregation uint uint)
 
-;; Allowed contract-callers handling a user's stacking activity.
-(define-map allowance-contract-callers { sender: principal, contract-caller: principal} {
-    until-burn-ht: (optional uint)
-})
+;; Allowed contract-callers handling a sbtc stacking activity.
+(define-map allowance-contract-callers
+	{ sender: principal, contract-caller: principal}
+	{until-burn-ht: (optional uint)})
 
 ;; All public keys (buff 33) ever used
 (define-map public-keys-used (buff 33) bool)
@@ -155,7 +159,7 @@
 
 ;; use MOCK function
 (define-read-only (get-stx-account (user principal))
-    (contract-call? .pox-3 get-stx-account user))
+	(contract-call? .pox-3 get-stx-account user))
 
 ;; Check if caller is a protocol caller
 (define-read-only (is-protocol-caller)
@@ -164,63 +168,63 @@
 
 ;; Get current cycle pool
 (define-read-only (get-current-cycle-pool)
-    (map-get? pool (current-pox-reward-cycle))
+	(map-get? pool (current-pox-reward-cycle))
 )
 
 ;; Get specific cycle pool
 (define-read-only (get-specific-cycle-pool (specific-cycle uint))
-        (map-get? pool specific-cycle)
+	(map-get? pool specific-cycle)
 )
 
 ;; Get signer in cycle
 (define-read-only (get-signer-in-cycle (signer-principal principal) (cycle uint))
-    (default-to {
-        amount: u0,
-        pox-addr: { version: 0x00, hashbytes: 0x00 },
-        vote: none,
-        public-key: 0x00,
-        lock-period: u0,
-        btc-earned: none
-    } (map-get? signer {stacker: signer-principal, pool: cycle}))
+	(default-to {
+		amount: u0,
+		pox-addr: { version: 0x00, hashbytes: 0x00 },
+		vote: none,
+		public-key: 0x00,
+		lock-period: u0,
+		btc-earned: none
+	} (map-get? signer {stacker: signer-principal, pool: cycle}))
 )
 
 ;; Get current window
 (define-read-only (get-current-window)
-    (let
-        (
-            (peg-state (contract-call? .sbtc-registry current-peg-state))
-            (current-cycle (current-pox-reward-cycle))
-            (current-cycle-burn-height (reward-cycle-to-burn-height current-cycle))
-            (next-cycle (+ u1 current-cycle))
-            (next-cycle-burn-height (reward-cycle-to-burn-height next-cycle))
-            (latest-disbursed-burn-height (var-get last-disbursed-burn-height))
-            (start-voting-window (- next-cycle-burn-height (+ normal-voting-period-len normal-transfer-period-len normal-penalty-period-len)))
-            (start-transfer-window (- next-cycle-burn-height (+ normal-transfer-period-len normal-penalty-period-len)))
-            (start-penalty-window (- next-cycle-burn-height normal-penalty-period-len))
-        )
+	(let
+		(
+			(peg-state (contract-call? .sbtc-registry current-peg-state))
+			(current-cycle (current-pox-reward-cycle))
+			(current-cycle-burn-height (reward-cycle-to-burn-height current-cycle))
+			(next-cycle (+ u1 current-cycle))
+			(next-cycle-burn-height (reward-cycle-to-burn-height next-cycle))
+			(latest-disbursed-burn-height (var-get last-disbursed-burn-height))
+			(start-voting-window (- next-cycle-burn-height (+ normal-voting-period-len normal-transfer-period-len normal-penalty-period-len)))
+			(start-transfer-window (- next-cycle-burn-height (+ normal-transfer-period-len normal-penalty-period-len)))
+			(start-penalty-window (- next-cycle-burn-height normal-penalty-period-len))
+		)
 
-        (asserts! peg-state bad-peg-state)
+		(asserts! peg-state bad-peg-state)
 
-        (asserts! (>= burn-block-height start-voting-window)
-                    (if (or (< current-cycle-burn-height latest-disbursed-burn-height) (is-eq latest-disbursed-burn-height u0))
-                        registration
-                        disbursement))
-        (asserts! (>= burn-block-height start-transfer-window) voting)
-        (asserts! (>= burn-block-height start-penalty-window) transfer)
-        penalty ;; lasts until the end of the cycle
-    )
+		(asserts! (>= burn-block-height start-voting-window)
+					(if (or (< current-cycle-burn-height latest-disbursed-burn-height) (is-eq latest-disbursed-burn-height u0))
+						registration
+						disbursement))
+		(asserts! (>= burn-block-height start-transfer-window) voting)
+		(asserts! (>= burn-block-height start-penalty-window) transfer)
+		penalty ;; lasts until the end of the cycle
+	)
 )
 
 
 ;; Avoid loading pox-3 for conversion only
 (define-read-only (reward-cycle-to-burn-height (cycle uint))
-    (+ (get first-burnchain-block-height pox-info) (* cycle (get reward-cycle-length pox-info))))
+	(+ (get first-burnchain-block-height pox-info) (* cycle (get reward-cycle-length pox-info))))
 
 (define-read-only (burn-height-to-reward-cycle (height uint))
-    (/ (- height (get first-burnchain-block-height pox-info)) (get reward-cycle-length pox-info)))
+	(/ (- height (get first-burnchain-block-height pox-info)) (get reward-cycle-length pox-info)))
 
 (define-read-only (current-pox-reward-cycle)
-    (burn-height-to-reward-cycle burn-block-height))
+	(burn-height-to-reward-cycle burn-block-height))
 
 
 ;;;;;;; Disbursement Functions ;;;;;;;
@@ -233,72 +237,72 @@
 
 ;; Disburse function for signers in (n - 1) to verify that their pox-rewards have been disbursed
 (define-public (prove-rewards-were-disbursed
-    (burn-height uint)
+	(burn-height uint)
 	(tx (buff 1024))
 	(header (buff 80))
 	(tx-index uint)
 	(tree-depth uint)
 	(wproof (list 14 (buff 32)))
-    (witness-merkle-root (buff 32))
-    (witness-reserved-data (buff 32))
+	(witness-merkle-root (buff 32))
+	(witness-reserved-data (buff 32))
 	(ctx (buff 1024))
 	(cproof (list 14 (buff 32))))
-    (let
-        (
-            (current-cycle (burn-height-to-reward-cycle block-height))
-            (previous-cycle (- current-cycle u1))
-            (previous-pool (unwrap! (map-get? pool previous-cycle) err-pool-cycle))
-            (unwrapped-previous-threshold-wallet (unwrap! (get threshold-wallet previous-pool) err-threshold-wallet-is-none))
-            (previous-threshold-wallet (get hashbytes unwrapped-previous-threshold-wallet))
-            (previous-threshold-wallet-version (get version unwrapped-previous-threshold-wallet))
-            (previous-pool-disbursed (get rewards-disbursed previous-pool))
-            (parsed-tx (unwrap! (contract-call? .clarity-bitcoin parse-tx tx) err-parsing-btc-tx))
-            (tx-outputs (get outs parsed-tx))
-            ;; Done manually for read/write concerns
-            (tx-output-0 (default-to {value: u0, scriptPubKey: previous-threshold-wallet} (element-at tx-outputs u0)))
-            (tx-output-1 (default-to {value: u0, scriptPubKey: previous-threshold-wallet} (element-at tx-outputs u1)))
-            (tx-output-2 (default-to {value: u0, scriptPubKey: previous-threshold-wallet} (element-at tx-outputs u2)))
-            (tx-output-3 (default-to {value: u0, scriptPubKey: previous-threshold-wallet} (element-at tx-outputs u3)))
-            (tx-output-4 (default-to {value: u0, scriptPubKey: previous-threshold-wallet} (element-at tx-outputs u4)))
-            (tx-output-5 (default-to {value: u0, scriptPubKey: previous-threshold-wallet} (element-at tx-outputs u5)))
-            (tx-output-6 (default-to {value: u0, scriptPubKey: previous-threshold-wallet} (element-at tx-outputs u6)))
-            (tx-output-7 (default-to {value: u0, scriptPubKey: previous-threshold-wallet} (element-at tx-outputs u7)))
+	(let
+		(
+			(current-cycle (burn-height-to-reward-cycle block-height))
+			(previous-cycle (- current-cycle u1))
+			(previous-pool (unwrap! (map-get? pool previous-cycle) err-pool-cycle))
+			(unwrapped-previous-threshold-wallet (unwrap! (get threshold-wallet previous-pool) err-threshold-wallet-is-none))
+			(previous-threshold-wallet (get hashbytes unwrapped-previous-threshold-wallet))
+			(previous-threshold-wallet-version (get version unwrapped-previous-threshold-wallet))
+			(previous-pool-disbursed (get rewards-disbursed previous-pool))
+			(parsed-tx (unwrap! (contract-call? .clarity-bitcoin parse-tx tx) err-parsing-btc-tx))
+			(tx-outputs (get outs parsed-tx))
+			;; Done manually for read/write concerns
+			(tx-output-0 (default-to {value: u0, scriptPubKey: previous-threshold-wallet} (element-at tx-outputs u0)))
+			(tx-output-1 (default-to {value: u0, scriptPubKey: previous-threshold-wallet} (element-at tx-outputs u1)))
+			(tx-output-2 (default-to {value: u0, scriptPubKey: previous-threshold-wallet} (element-at tx-outputs u2)))
+			(tx-output-3 (default-to {value: u0, scriptPubKey: previous-threshold-wallet} (element-at tx-outputs u3)))
+			(tx-output-4 (default-to {value: u0, scriptPubKey: previous-threshold-wallet} (element-at tx-outputs u4)))
+			(tx-output-5 (default-to {value: u0, scriptPubKey: previous-threshold-wallet} (element-at tx-outputs u5)))
+			(tx-output-6 (default-to {value: u0, scriptPubKey: previous-threshold-wallet} (element-at tx-outputs u6)))
+			(tx-output-7 (default-to {value: u0, scriptPubKey: previous-threshold-wallet} (element-at tx-outputs u7)))
 
-            ;; versions + hashbytes to scriptPubKey
-            (previous-unwrapped-threshold-pubkey (unwrap! (contract-call? .sbtc-btc-tx-helper hashbytes-to-scriptpubkey unwrapped-previous-threshold-wallet) err-threshold-to-scriptpubkey))
-        )
+			;; versions + hashbytes to scriptPubKey
+			(previous-unwrapped-threshold-pubkey (unwrap! (contract-call? .sbtc-btc-tx-helper hashbytes-to-scriptpubkey unwrapped-previous-threshold-wallet) err-threshold-to-scriptpubkey))
+		)
 
-            ;; Assert we're in the disbursement window
-            (asserts! (is-eq (get-current-window) disbursement)  err-not-in-registration-window)
+			;; Assert we're in the disbursement window
+			(asserts! (is-eq (get-current-window) disbursement)  err-not-in-registration-window)
 
-            ;; Assert that balance of previous-threshold-wallet was transferred
-            (asserts! (get balance-transferred previous-pool) err-balance-not-transferred)
+			;; Assert that balance of previous-threshold-wallet was transferred
+			(asserts! (get balance-transferred previous-pool) err-balance-not-transferred)
 
-            ;; Assert that rewards haven't already been disbursed
-            (asserts! (not previous-pool-disbursed) err-already-disbursed)
+			;; Assert that rewards haven't already been disbursed
+			(asserts! (not previous-pool-disbursed) err-already-disbursed)
 
-            ;; Assert that transaction was mined...tbd last two params
-            (unwrap! (contract-call? .clarity-bitcoin was-segwit-tx-mined-compact burn-height tx header tx-index tree-depth wproof witness-merkle-root witness-reserved-data ctx cproof) err-tx-not-mined)
+			;; Assert that transaction was mined...tbd last two params
+			(unwrap! (contract-call? .clarity-bitcoin was-segwit-tx-mined-compact burn-height tx header tx-index tree-depth wproof witness-merkle-root witness-reserved-data ctx cproof) err-tx-not-mined)
 
-            ;; Assert that every unwrapped receiver addresss is equal to previous-threshold-wallet
-            (asserts! (and
-                (is-eq previous-unwrapped-threshold-pubkey (get scriptPubKey tx-output-0))
-                (is-eq previous-unwrapped-threshold-pubkey (get scriptPubKey tx-output-1))
-                (is-eq previous-unwrapped-threshold-pubkey (get scriptPubKey tx-output-2))
-                (is-eq previous-unwrapped-threshold-pubkey (get scriptPubKey tx-output-3))
-                (is-eq previous-unwrapped-threshold-pubkey (get scriptPubKey tx-output-4))
-                (is-eq previous-unwrapped-threshold-pubkey (get scriptPubKey tx-output-5))
-                (is-eq previous-unwrapped-threshold-pubkey (get scriptPubKey tx-output-6))
-                (is-eq previous-unwrapped-threshold-pubkey (get scriptPubKey tx-output-7))
-            ) err-wrong-pubkey)
+			;; Assert that every unwrapped receiver addresss is equal to previous-threshold-wallet
+			(asserts! (and
+				(is-eq previous-unwrapped-threshold-pubkey (get scriptPubKey tx-output-0))
+				(is-eq previous-unwrapped-threshold-pubkey (get scriptPubKey tx-output-1))
+				(is-eq previous-unwrapped-threshold-pubkey (get scriptPubKey tx-output-2))
+				(is-eq previous-unwrapped-threshold-pubkey (get scriptPubKey tx-output-3))
+				(is-eq previous-unwrapped-threshold-pubkey (get scriptPubKey tx-output-4))
+				(is-eq previous-unwrapped-threshold-pubkey (get scriptPubKey tx-output-5))
+				(is-eq previous-unwrapped-threshold-pubkey (get scriptPubKey tx-output-6))
+				(is-eq previous-unwrapped-threshold-pubkey (get scriptPubKey tx-output-7))
+			) err-wrong-pubkey)
 
-            ;; All POX rewards have been distributed, update relevant vars/maps
-            (var-set last-disbursed-burn-height block-height)
-            (ok (map-set pool previous-cycle (merge
-                previous-pool
-                {rewards-disbursed: true}
-            )))
-    )
+			;; All POX rewards have been distributed, update relevant vars/maps
+			(var-set last-disbursed-burn-height block-height)
+			(ok (map-set pool previous-cycle (merge
+				previous-pool
+				{rewards-disbursed: true}
+			)))
+	)
 )
 
 
@@ -307,150 +311,153 @@
 
 ;; @desc: pre-registers a stacker for the cycle, goal of this function is to gurantee the amount of STX to be stacked for the next cycle
 (define-public (signer-pre-register (amount-ustx uint) (pox-addr { version: (buff 1), hashbytes: (buff 32)}))
-    (let
-        (
-            (signer-account (get-stx-account tx-sender))
-            (new-signer tx-sender)
-            (signer-unlocked-balance (get unlocked signer-account))
-            (signer-allowance-status (unwrap! (contract-call? .pox-3 get-allowance-contract-callers tx-sender (as-contract tx-sender)) err-allowance-not-set))
-            (signer-allowance-end-height (get until-burn-ht signer-allowance-status))
-            (current-cycle (current-pox-reward-cycle))
-            (next-cycle (+ current-cycle u1))
-            (current-pre-signer (map-get? pre-signer {stacker: tx-sender, pool: current-cycle}))
-            (current-signer (map-get? signer {stacker: tx-sender, pool: current-cycle}))
-        )
+	(let
+		(
+			(signer-account (get-stx-account tx-sender))
+			(new-signer tx-sender)
+			(signer-unlocked-balance (get unlocked signer-account))
+			(signer-allowance-status (unwrap! (contract-call? .pox-3 get-allowance-contract-callers tx-sender (as-contract tx-sender)) err-allowance-not-set))
+			(signer-allowance-end-height (get until-burn-ht signer-allowance-status))
+			(current-cycle (current-pox-reward-cycle))
+			(next-cycle (+ current-cycle u1))
+			(current-pre-signer (map-get? pre-signer {stacker: tx-sender, pool: current-cycle}))
+			(current-signer (map-get? signer {stacker: tx-sender, pool: current-cycle}))
+		)
 
-        ;; Assert that amount-ustx is greater than signer-minimal
-        (asserts! (>= amount-ustx signer-minimal) err-not-enough-stacked)
+		;; Assert that amount-ustx is greater than signer-minimal
+		(asserts! (>= amount-ustx signer-minimal) err-not-enough-stacked)
 
-        ;; Assert signer-allowance-end-height is either none or block-height is less than signer-allowance-end-height
-        (asserts! (or
-            (is-none signer-allowance-end-height)
-            (< burn-block-height (default-to burn-block-height signer-allowance-end-height))
-        ) err-allowance-height)
+		;; Assert signer-allowance-end-height is either none or block-height is less than signer-allowance-end-height
+		(asserts! (or
+			(is-none signer-allowance-end-height)
+			(< burn-block-height (default-to burn-block-height signer-allowance-end-height))
+		) err-allowance-height)
 
-        ;; Assert not already pre-signer or signer
-        (asserts! (or (is-none current-pre-signer) (is-none current-signer)) err-already-pre-signer-or-signer)
+		;; assert that caller is allowed to handle stacking activity
+		(asserts! (check-caller-allowed) err-stacking-permission-denied)
 
-        ;; Assert we're in the registration window
-        (asserts! (is-eq (get-current-window) registration)  err-not-in-registration-window)
+		;; Assert not already pre-signer or signer
+		(asserts! (or (is-none current-pre-signer) (is-none current-signer)) err-already-pre-signer-or-signer)
 
-        ;; Delegate-stx to their PoX address
-        (match (contract-call? .pox-3 delegate-stx amount-ustx (as-contract tx-sender) none (some pox-addr))
-            success true
-            error (asserts! false (err (+ (to-uint error) u60000))))
+		;; Assert we're in the registration window
+		(asserts! (is-eq (get-current-window) registration)  err-not-in-registration-window)
 
-        ;; Delegate-stack-stx for next cycle
-        (match (as-contract (contract-call? .pox-3 delegate-stack-stx new-signer amount-ustx pox-addr burn-block-height u1))
-            success true
-            error (asserts! false (err (+ (to-uint error) u60000))))
+		;; Delegate-stx to their PoX address
+		(match (contract-call? .pox-3 delegate-stx amount-ustx (as-contract tx-sender) none (some pox-addr))
+			success true
+			error (asserts! false (err (+ (to-uint error) const-first-pox-error))))
 
-        ;; Stack aggregate-commit
-        ;; As pointed out by Friedger, this fails when the user is already stacking. Match err-branch takes care of this with stack-delegate-increase instead.
-        (match (as-contract (contract-call? .pox-3 stack-aggregation-commit-indexed pox-addr next-cycle))
-            ok-branch
-                true
-            err-branch
-                (begin
+		;; Delegate-stack-stx for next cycle
+		(match (as-contract (contract-call? .pox-3 delegate-stack-stx new-signer amount-ustx pox-addr burn-block-height u1))
+			success true
+			error (asserts! false (err (+ (to-uint error) const-second-pox-error))))
 
-                    ;; Assert stacker isn't attempting to decrease
-                    (asserts! (>= amount-ustx (get locked signer-account)) err-decrease-forbidden)
+		;; Stack aggregate-commit
+		;; As pointed out by Friedger, this fails when the user is already stacking. Match err-branch takes care of this with stack-delegate-increase instead.
+		(match (as-contract (contract-call? .pox-3 stack-aggregation-commit-indexed pox-addr next-cycle))
+			ok-branch
+				true
+			err-branch
+				(begin
 
-                    ;; Delegate-stack-increase for next cycle so that there is no cooldown
-                    (try! (match (as-contract (contract-call? .pox-3 delegate-stack-increase new-signer pox-addr (- amount-ustx (get locked signer-account))))
-                    success (ok true)
-                    error (err (to-uint error))))
-                    true
-                )
-        )
+					;; Assert stacker isn't attempting to decrease
+					(asserts! (>= amount-ustx (get locked signer-account)) err-decrease-forbidden)
 
-        ;; Record pre-signer
-        (ok (map-set pre-signer {stacker: tx-sender, pool: next-cycle} true))
+					;; Delegate-stack-increase for next cycle so that there is no cooldown
+					(try! (match (as-contract (contract-call? .pox-3 delegate-stack-increase new-signer pox-addr (- amount-ustx (get locked signer-account))))
+					success (ok true)
+					error (err (to-uint error))))
+					true
+				)
+		)
 
-    )
+		;; Record pre-signer
+		(ok (map-set pre-signer {stacker: tx-sender, pool: next-cycle} true))
+
+	)
 )
 
 ;; @desc: registers a signer for the cycle, goal of this function is to gurantee the amount of STX to be stacked for the next cycle
 (define-public (signer-register (pre-registered-signer principal) (amount-ustx uint) (pox-addr { version: (buff 1), hashbytes: (buff 32)}) (public-key (buff 32)))
-    (let
-        (
-            (signer-account (get-stx-account pre-registered-signer))
-            (signer-unlocked-balance (get unlocked signer-account))
-            (signer-allowance-status (unwrap! (contract-call? .pox-3 get-allowance-contract-callers pre-registered-signer (as-contract tx-sender)) err-allowance-not-set))
-            (signer-allowance-end-height (get until-burn-ht signer-allowance-status))
-            (current-cycle (current-pox-reward-cycle))
-            (next-cycle (+ current-cycle u1))
-            (current-pre-signer (map-get? pre-signer {stacker: pre-registered-signer, pool: current-cycle}))
-            (current-signer (map-get? signer {stacker: pre-registered-signer, pool: current-cycle}))
-            (pox-address-cycle-use (map-get? payout-address-in-cycle pox-addr))
-        )
+	(let
+		(
+			(signer-account (get-stx-account pre-registered-signer))
+			(signer-unlocked-balance (get unlocked signer-account))
+			(signer-allowance-status (unwrap! (contract-call? .pox-3 get-allowance-contract-callers pre-registered-signer (as-contract tx-sender)) err-allowance-not-set))
+			(signer-allowance-end-height (get until-burn-ht signer-allowance-status))
+			(current-cycle (current-pox-reward-cycle))
+			(next-cycle (+ current-cycle u1))
+			(current-pre-signer (map-get? pre-signer {stacker: pre-registered-signer, pool: current-cycle}))
+			(current-signer (map-get? signer {stacker: pre-registered-signer, pool: current-cycle}))
+			(pox-address-cycle-use (map-get? payout-address-in-cycle pox-addr))
+		)
 
-        ;; Assert signer-allowance-end-height is either none or block-height is less than signer-allowance-end-height
-        (asserts! (or (is-none signer-allowance-end-height) (< burn-block-height (default-to burn-block-height signer-allowance-end-height))) err-allowance-height)
+		;; Assert signer-allowance-end-height is either none or block-height is less than signer-allowance-end-height
+		(asserts! (or (is-none signer-allowance-end-height) (< burn-block-height (default-to burn-block-height signer-allowance-end-height))) err-allowance-height)
 
-        ;; Assert we're in a good-peg state & in the registration window
-        (asserts! (is-eq (get-current-window) registration)  err-not-in-registration-window)
+		;; Assert we're in a good-peg state & in the registration window
+		(asserts! (is-eq (get-current-window) registration)  err-not-in-registration-window)
 
-        ;; Assert the public-key hasn't been used before
-        (asserts! (is-none (map-get? public-keys-used public-key)) err-public-key-already-used)
+		;; Assert the public-key hasn't been used before
+		(asserts! (is-none (map-get? public-keys-used public-key)) err-public-key-already-used)
 
-        ;; Assert that pox-address-cycle-use is either none or the result is not equal to the next cycle
-        (asserts! (or
-            (is-none pox-address-cycle-use)
-            (not (is-eq (default-to u0 pox-address-cycle-use) next-cycle))
-        ) err-pox-address-re-use)
+		;; Assert that pox-address-cycle-use is either none or the result is not equal to the next cycle
+		(asserts! (or
+			(is-none pox-address-cycle-use)
+			(not (is-eq (default-to u0 pox-address-cycle-use) next-cycle))
+		) err-pox-address-re-use)
 
-        ;; Assert that pre-registered-signer is either pre-signed for the current-cycle or is a signer for the current-cycle && voted in the last one (?)
-        (asserts! (or
-            (is-some current-pre-signer)
-            (and (is-some current-signer) (is-some (get vote current-signer)))
-        ) err-already-pre-signer-or-signer)
+		;; Assert that pre-registered-signer is either pre-signed for the current-cycle or is a signer for the current-cycle && voted in the last one (?)
+		(asserts! (or
+			(is-some current-pre-signer)
+			(and (is-some current-signer) (is-some (get vote current-signer)))
+		) err-already-pre-signer-or-signer)
 
-        ;; Assert that pre-registered signer has at least the amount of STX to be stacked already locked (entire point of pre-registering)
-        (asserts! (>= (get locked signer-account) amount-ustx) err-not-enough-stacked)
+		;; Assert that pre-registered signer has at least the amount of STX to be stacked already locked (entire point of pre-registering)
+		(asserts! (>= (get locked signer-account) amount-ustx) err-not-enough-stacked)
 
-        ;; Assert that pre-registered signer will unlock in the next cycle
-        (asserts! (is-eq next-cycle (burn-height-to-reward-cycle (get unlock-height signer-account))) err-wont-unlock)
+		;; Assert that pre-registered signer will unlock in the next cycle
+		(asserts! (is-eq next-cycle (burn-height-to-reward-cycle (get unlock-height signer-account))) err-wont-unlock)
 
-        ;; update all relevant maps
-        ;; update signer map
-        (map-set signer {stacker: tx-sender, pool: next-cycle} {
-            amount: amount-ustx,
-            ;; pox-addrs must be unique per cycle
-            pox-addr: pox-addr,
-            vote: none,
-            public-key: public-key,
-            lock-period: u0,
-            btc-earned: none
-        })
-        ;; need to set pool map
-        ;; check if first time next-cycle pool is set
-        (ok (match (map-get? pool next-cycle)
-            ;; next pool already exists, update/merge
-            next-pool
-                (map-set pool next-cycle (merge
-                    next-pool
-                    {
-                        stackers: (unwrap! (as-max-len? (append (get stackers next-pool) tx-sender) u100) err-too-many-candidates),
-                        stacked: (+ (get stacked next-pool) amount-ustx)
-                    }
-                ))
-            ;; next pool initial set
-            (map-set pool next-cycle
-                {
-                    stackers: (list tx-sender),
-                    stacked: amount-ustx,
-                    threshold-wallet-candidates: (list ),
-                    threshold-wallet: none,
-                    last-aggregation: none,
-                    reward-index: none,
-                    balance-transferred: false,
-                    rewards-disbursed: false
-                }
-            )
-        ))
+		;; update all relevant maps
+		;; update signer map
+		(map-set signer {stacker: tx-sender, pool: next-cycle} {
+			amount: amount-ustx,
+			;; pox-addrs must be unique per cycle
+			pox-addr: pox-addr,
+			vote: none,
+			public-key: public-key,
+			lock-period: u0,
+			btc-earned: none
+		})
+		;; need to set pool map
+		;; check if first time next-cycle pool is set
+		(ok (match (map-get? pool next-cycle)
+			;; next pool already exists, update/merge
+			next-pool
+				(map-set pool next-cycle (merge
+					next-pool
+					{
+						stackers: (unwrap! (as-max-len? (append (get stackers next-pool) tx-sender) u100) err-too-many-candidates),
+						stacked: (+ (get stacked next-pool) amount-ustx)
+					}
+				))
+			;; next pool initial set
+			(map-set pool next-cycle
+				{
+					stackers: (list tx-sender),
+					stacked: amount-ustx,
+					threshold-wallet-candidates: (list ),
+					threshold-wallet: none,
+					last-aggregation: none,
+					reward-index: none,
+					balance-transferred: false,
+					rewards-disbursed: false
+				}
+			)
+		))
 
-    )
+	)
 )
 
 
@@ -459,110 +466,110 @@
 
 ;; @desc: Voting function for deciding the threshold-wallet/PoX address for the next pool & cycle, once a single wallet-candidate reaches 70% of the vote, stack-aggregate-index
 (define-public (vote-for-threshold-wallet-candidate (pox-addr { version: (buff 1), hashbytes: (buff 32)}))
-    (let
-        (
-            (current-cycle (current-pox-reward-cycle))
-            (next-cycle (+ current-cycle u1))
-            (current-candidate-status (map-get? votes-per-cycle {cycle: next-cycle, wallet-candidate: pox-addr}))
-            (next-pool (unwrap! (map-get? pool next-cycle) err-pool-cycle))
-            (next-pool-stackers (get stackers next-pool))
-            (next-threshold-wallet (get threshold-wallet next-pool))
-            (next-pool-total-stacked (get stacked next-pool))
-            (next-pool-signer (unwrap! (map-get? signer {stacker: tx-sender, pool: next-cycle}) err-not-signer))
-            (next-pool-signer-amount (get amount next-pool-signer))
-        )
+	(let
+		(
+			(current-cycle (current-pox-reward-cycle))
+			(next-cycle (+ current-cycle u1))
+			(current-candidate-status (map-get? votes-per-cycle {cycle: next-cycle, wallet-candidate: pox-addr}))
+			(next-pool (unwrap! (map-get? pool next-cycle) err-pool-cycle))
+			(next-pool-stackers (get stackers next-pool))
+			(next-threshold-wallet (get threshold-wallet next-pool))
+			(next-pool-total-stacked (get stacked next-pool))
+			(next-pool-signer (unwrap! (map-get? signer {stacker: tx-sender, pool: next-cycle}) err-not-signer))
+			(next-pool-signer-amount (get amount next-pool-signer))
+		)
 
-        ;; Assert we're in a good-peg state
-        (asserts! (contract-call? .sbtc-registry current-peg-state) err-not-in-good-peg-state)
+		;; Assert we're in a good-peg state
+		(asserts! (contract-call? .sbtc-registry current-peg-state) err-not-in-good-peg-state)
 
-        ;; Assert we're in the voting window
-        (asserts! (is-eq (get-current-window) voting) err-voting-period-closed)
+		;; Assert we're in the voting window
+		(asserts! (is-eq (get-current-window) voting) err-voting-period-closed)
 
-        ;; Assert signer hasn't voted yet
-        (asserts! (is-none (get vote next-pool-signer)) err-already-voted)
+		;; Assert signer hasn't voted yet
+		(asserts! (is-none (get vote next-pool-signer)) err-already-voted)
 
-        ;; Update signer map with vote
-        (map-set signer {stacker: tx-sender, pool: next-cycle} (merge
-            next-pool-signer
-            {vote: (some pox-addr)}
-        ))
+		;; Update signer map with vote
+		(map-set signer {stacker: tx-sender, pool: next-cycle} (merge
+			next-pool-signer
+			{vote: (some pox-addr)}
+		))
 
 
-        (asserts!
-            ;; New candidate path
-            (and
-               ;; Candidate doesn't exist, update relevant maps: votes-per-cycle & pool
-               (is-none current-candidate-status)
-               ;; Update votes-per-cycle map with first vote for this wallet-candidate
-               (map-set votes-per-cycle {cycle: next-cycle, wallet-candidate: pox-addr} {
-                        aggregate-commit-index: none,
-                        votes-in-ustx: (get amount next-pool-signer),
-                        num-signer: u1,
-                })
-                
-                ;; Update pool map by appending wallet-candidate to list of candidates
-                (map-set pool next-cycle (merge
-                    next-pool
-                    {threshold-wallet-candidates: (unwrap! (as-max-len? (append (get threshold-wallet-candidates next-pool) pox-addr) u100) err-candidates-overflow)}
-                ))
+		(asserts!
+			;; New candidate path
+			(and
+			   ;; Candidate doesn't exist, update relevant maps: votes-per-cycle & pool
+			   (is-none current-candidate-status)
+			   ;; Update votes-per-cycle map with first vote for this wallet-candidate
+			   (map-set votes-per-cycle {cycle: next-cycle, wallet-candidate: pox-addr} {
+						aggregate-commit-index: none,
+						votes-in-ustx: (get amount next-pool-signer),
+						num-signer: u1,
+				})
+				
+				;; Update pool map by appending wallet-candidate to list of candidates
+				(map-set pool next-cycle (merge
+					next-pool
+					{threshold-wallet-candidates: (unwrap! (as-max-len? (append (get threshold-wallet-candidates next-pool) pox-addr) u100) err-candidates-overflow)}
+				))
 
-            )
-            ;; Existing candidate path
-            (let
-                (
-                    (unwrapped-candidate (unwrap-panic current-candidate-status))
-                    (unwrapped-candidate-votes (get votes-in-ustx unwrapped-candidate))
-                    (unwrapped-candidate-num-signer (get num-signer unwrapped-candidate))
-                    (new-candidate-votes (+ (get amount next-pool-signer) (get votes-in-ustx unwrapped-candidate)))
-                )
+			)
+			;; Existing candidate path
+			(let
+				(
+					(unwrapped-candidate (unwrap-panic current-candidate-status))
+					(unwrapped-candidate-votes (get votes-in-ustx unwrapped-candidate))
+					(unwrapped-candidate-num-signer (get num-signer unwrapped-candidate))
+					(new-candidate-votes (+ (get amount next-pool-signer) (get votes-in-ustx unwrapped-candidate)))
+				)
 
-                    ;; Update votes-per-cycle map for existing candidate
-                    (map-set votes-per-cycle {cycle: next-cycle, wallet-candidate: pox-addr} (merge
-                        unwrapped-candidate
-                        {
-                            votes-in-ustx: (+ next-pool-signer-amount unwrapped-candidate-votes),
-                            num-signer: (+ u1 unwrapped-candidate-num-signer)
-                        }
-                    ))
+					;; Update votes-per-cycle map for existing candidate
+					(map-set votes-per-cycle {cycle: next-cycle, wallet-candidate: pox-addr} (merge
+						unwrapped-candidate
+						{
+							votes-in-ustx: (+ next-pool-signer-amount unwrapped-candidate-votes),
+							num-signer: (+ u1 unwrapped-candidate-num-signer)
+						}
+					))
 
-                    ;; Update signer map
-                    (map-set signer {stacker: tx-sender, pool: next-cycle} (merge next-pool-signer { vote: (some pox-addr) }))
+					;; Update signer map
+					(map-set signer {stacker: tx-sender, pool: next-cycle} (merge next-pool-signer { vote: (some pox-addr) }))
 
-                    ;; Asserts! logic to check if 70% wallet consensus has been reached
-                    (asserts!
-                        (and
-                            ;; Assert that new-candidate-votes is greater than or equal to 70% of next-pool-total-stacked
-                            (>= (/ (* new-candidate-votes u1000) next-pool-total-stacked) (var-get threshold-consensus))
+					;; Asserts! logic to check if 70% wallet consensus has been reached
+					(asserts!
+						(and
+							;; Assert that new-candidate-votes is greater than or equal to 70% of next-pool-total-stacked
+							(>= (/ (* new-candidate-votes u1000) next-pool-total-stacked) (var-get threshold-consensus))
 
-                            ;; Assert that extend-and-commit-bool is true (both delegate-stack-extend & aggregate-commit-indexed succeeded)
-                            (match (fold mass-delegate-stack-extend next-pool-stackers (ok {stacker: tx-sender, unlock-burn-height: u0, pox-addr: pox-addr}))
-                                passed-result
-                                    (match (as-contract (contract-call? .pox-3 stack-aggregation-commit-indexed pox-addr next-cycle))
-                                        ;; Okay result, update pool map with last-aggregation (block-height) & reward-index
-                                        ok-result
-                                            (map-set pool next-cycle (merge
-                                                next-pool
-                                                {last-aggregation: (some block-height), reward-index: (some ok-result), threshold-wallet: (some pox-addr)}
-                                            ))
-                                        err-result
-                                        ;; Returning false to signify that 70% consensus has not been reached
-                                        (begin
-                                            (print (/ (* new-candidate-votes u1000) next-pool-total-stacked))
-                                            false
-                                        )
-                                    )
-                                err-result
-                                    false
-                            )
-                        )
-                    ok-vote-existing-candidate-lost)
+							;; Assert that extend-and-commit-bool is true (both delegate-stack-extend & aggregate-commit-indexed succeeded)
+							(match (fold mass-delegate-stack-extend next-pool-stackers (ok {stacker: tx-sender, unlock-burn-height: u0, pox-addr: pox-addr}))
+								passed-result
+									(match (as-contract (contract-call? .pox-3 stack-aggregation-commit-indexed pox-addr next-cycle))
+										;; Okay result, update pool map with last-aggregation (block-height) & reward-index
+										ok-result
+											(map-set pool next-cycle (merge
+												next-pool
+												{last-aggregation: (some block-height), reward-index: (some ok-result), threshold-wallet: (some pox-addr)}
+											))
+										err-result
+										;; Returning false to signify that 70% consensus has not been reached
+										(begin
+											(print (/ (* new-candidate-votes u1000) next-pool-total-stacked))
+											false
+										)
+									)
+								err-result
+									false
+							)
+						)
+					ok-vote-existing-candidate-lost)
 
-                    ok-vote-existing-candidate-won
-            )
-        )
+					ok-vote-existing-candidate-won
+			)
+		)
 
-        ok-voted
-    )
+		ok-voted
+	)
 )
 
 
@@ -572,21 +579,21 @@
 ;; Transfer function for proving that current/soon-to-be-old signers have transferred the peg balance to the next threshold-wallet
 ;; Can only be called by the sbtc-peg-transfer/handoff contract. If successful, balance-disbursed is set to true for the previous pool
 (define-public (balance-was-transferred (previous-cycle uint))
-    (let
-        (
-            (previous-pool (unwrap! (map-get? pool previous-cycle) err-pool-cycle))
-        )
+	(let
+		(
+			(previous-pool (unwrap! (map-get? pool previous-cycle) err-pool-cycle))
+		)
 
-            ;; Assert that contract-caller is .sbtc-peg-transfer / handoff contract
-            (asserts! (is-eq contract-caller .sbtc-peg-transfer) err-not-handoff-contract)
+			;; Assert that contract-caller is .sbtc-peg-transfer / handoff contract
+			(asserts! (is-eq contract-caller .sbtc-peg-transfer) err-not-handoff-contract)
 
-            ;; peg-transfer /handoff success, update relevant vars/maps
-            (ok (map-set pool previous-cycle (merge
-                previous-pool
-                {balance-transferred: true}
-            )))
+			;; peg-transfer /handoff success, update relevant vars/maps
+			(ok (map-set pool previous-cycle (merge
+				previous-pool
+				{balance-transferred: true}
+			)))
 
-    )
+	)
 )
 
 
@@ -595,178 +602,221 @@
 
 ;; Penalty function for an unexpired, unhandled request-post-vote
 (define-public (penalty-unhandled-request)
-    (let
-        (
-            (current-cycle (current-pox-reward-cycle))
-            (next-cycle (+ current-cycle u1))
-            (current-pool (unwrap! (map-get? pool current-cycle) err-pool-cycle))
-            (current-pool-stackers (get stackers current-pool))
-            (next-pool (unwrap! (map-get? pool next-cycle) err-pool-cycle))
-        )
+	(let
+		(
+			(current-cycle (current-pox-reward-cycle))
+			(next-cycle (+ current-cycle u1))
+			(current-pool (unwrap! (map-get? pool current-cycle) err-pool-cycle))
+			(current-pool-stackers (get stackers current-pool))
+			(next-pool (unwrap! (map-get? pool next-cycle) err-pool-cycle))
+		)
 
-        ;; Assert that we're in the transfer window
-        (asserts! (is-eq (get-current-window) transfer) err-not-in-transfer-window)
+		;; Assert that we're in the transfer window
+		(asserts! (is-eq (get-current-window) transfer) err-not-in-transfer-window)
 
-        ;; Assert that pending-wallet-peg-outs is not equal to zero
-        (asserts! (> (contract-call? .sbtc-registry get-pending-wallet-peg-outs) u0) err-unhandled-request)
+		;; Assert that pending-wallet-peg-outs is not equal to zero
+		(asserts! (> (contract-call? .sbtc-registry get-pending-wallet-peg-outs) u0) err-unhandled-request)
 
-        ;; Penalize stackers by re-stacking but with a pox-reward address of burn address
-        (try! (penalize-helper current-pool))
+		;; Penalize stackers by re-stacking but with a pox-reward address of burn address
+		(try! (penalize-helper current-pool))
 
-        ;; Change peg-state to "bad-peg" :(
-        (contract-call? .sbtc-registry set-peg-state false)
+		;; Change peg-state to "bad-peg" :(
+		(contract-call? .sbtc-registry set-peg-state false)
 
-    )
+	)
 )
 
 ;; Penalty function for when a new wallet vote threshold (70%) is not met in time
 (define-public (penalty-vote-threshold)
-    (let
-        (
-            (current-cycle (current-pox-reward-cycle))
-            (next-cycle (+ current-cycle u1))
-            (current-pool (unwrap! (map-get? pool current-cycle) err-pool-cycle))
-            (current-pool-stackers (get stackers current-pool))
-            (next-pool (unwrap! (map-get? pool next-cycle) err-pool-cycle))
-            (next-pool-threshold-wallet (get threshold-wallet next-pool))
-        )
+	(let
+		(
+			(current-cycle (current-pox-reward-cycle))
+			(next-cycle (+ current-cycle u1))
+			(current-pool (unwrap! (map-get? pool current-cycle) err-pool-cycle))
+			(current-pool-stackers (get stackers current-pool))
+			(next-pool (unwrap! (map-get? pool next-cycle) err-pool-cycle))
+			(next-pool-threshold-wallet (get threshold-wallet next-pool))
+		)
 
-        ;; Assert that we're in the transfer window
-        (asserts! (is-eq (get-current-window) transfer) err-not-in-transfer-window)
+		;; Assert that we're in the transfer window
+		(asserts! (is-eq (get-current-window) transfer) err-not-in-transfer-window)
 
-        ;; Assert that next-pool-threshold-wallet is-none
-        (asserts! (is-some next-pool-threshold-wallet) err-unhandled-request)
+		;; Assert that next-pool-threshold-wallet is-none
+		(asserts! (is-some next-pool-threshold-wallet) err-unhandled-request)
 
-        ;; Assert that pending-wallet-peg-outs is equal to zero
-        (asserts! (is-eq (contract-call? .sbtc-registry get-pending-wallet-peg-outs) u0) err-unhandled-request)
+		;; Assert that pending-wallet-peg-outs is equal to zero
+		(asserts! (is-eq (contract-call? .sbtc-registry get-pending-wallet-peg-outs) u0) err-unhandled-request)
 
-        ;; Penalize stackers by re-stacking but with a pox-reward address of burn address
-        (try! (penalize-helper current-pool))
+		;; Penalize stackers by re-stacking but with a pox-reward address of burn address
+		(try! (penalize-helper current-pool))
 
-        ;; Change peg-state to "bad-peg"
-        (contract-call? .sbtc-registry set-peg-state false)
+		;; Change peg-state to "bad-peg"
+		(contract-call? .sbtc-registry set-peg-state false)
 
-    )
+	)
 )
 
 ;; Penalty function for when a stacker fails to transfer the current peg balance to the next threshold wallet
 (define-public (penalty-balance-transfer)
-    (let
-        (
-            (current-cycle (current-pox-reward-cycle))
-            (current-pool (unwrap! (map-get? pool current-cycle) err-pool-cycle))
-            (current-pool-balance-transfer (get balance-transferred current-pool))
-            (current-pool-stackers (get stackers current-pool))
-            (next-cycle (+ current-cycle u1))
-            (next-pool (unwrap! (map-get? pool next-cycle) err-pool-cycle))
-            (next-pool-threshold-wallet (get threshold-wallet next-pool))
-        )
+	(let
+		(
+			(current-cycle (current-pox-reward-cycle))
+			(current-pool (unwrap! (map-get? pool current-cycle) err-pool-cycle))
+			(current-pool-balance-transfer (get balance-transferred current-pool))
+			(current-pool-stackers (get stackers current-pool))
+			(next-cycle (+ current-cycle u1))
+			(next-pool (unwrap! (map-get? pool next-cycle) err-pool-cycle))
+			(next-pool-threshold-wallet (get threshold-wallet next-pool))
+		)
 
-        ;; Assert that we're in the penalty window
-        (asserts! (is-eq (get-current-window) penalty) err-not-in-penalty-window)
+		;; Assert that we're in the penalty window
+		(asserts! (is-eq (get-current-window) penalty) err-not-in-penalty-window)
 
-        ;; Assert that next-pool-threshold-wallet is-some / was voted in correctly
-        (asserts! (is-some next-pool-threshold-wallet) err-unhandled-request)
+		;; Assert that next-pool-threshold-wallet is-some / was voted in correctly
+		(asserts! (is-some next-pool-threshold-wallet) err-unhandled-request)
 
-        ;; Assert that balance-transfer is false (wasn't already transferred)
-        (asserts! (not current-pool-balance-transfer) err-unhandled-request)
+		;; Assert that balance-transfer is false (wasn't already transferred)
+		(asserts! (not current-pool-balance-transfer) err-unhandled-request)
 
-        ;; Penalize stackers by re-stacking but with a pox-reward address of burn address
-        (try! (penalize-helper current-pool))
+		;; Penalize stackers by re-stacking but with a pox-reward address of burn address
+		(try! (penalize-helper current-pool))
 
-        ;; Change peg-state to "bad-peg"
-        (contract-call? .sbtc-registry set-peg-state false)
+		;; Change peg-state to "bad-peg"
+		(contract-call? .sbtc-registry set-peg-state false)
 
-    )
+	)
 )
 
 ;; Penalty function for when the pox-rewards aren't disbursed in time / registration is missing
 (define-public (penalty-pox-reward-disbursement)
-    (let
-        (
-            (current-cycle (current-pox-reward-cycle))
-            (current-pool (unwrap! (map-get? pool current-cycle) err-pool-cycle))
-            (previous-cycle (- current-cycle u1))
-            (previous-pool (unwrap! (map-get? pool previous-cycle) err-pool-cycle))
-            (previous-pool-rewards-disbursed (get rewards-disbursed previous-pool))
-            (next-cycle (+ current-cycle u1))
-            (next-pool (unwrap! (map-get? pool next-cycle) err-pool-cycle))
-        )
+	(let
+		(
+			(current-cycle (current-pox-reward-cycle))
+			(current-pool (unwrap! (map-get? pool current-cycle) err-pool-cycle))
+			(previous-cycle (- current-cycle u1))
+			(previous-pool (unwrap! (map-get? pool previous-cycle) err-pool-cycle))
+			(previous-pool-rewards-disbursed (get rewards-disbursed previous-pool))
+			(next-cycle (+ current-cycle u1))
+			(next-pool (unwrap! (map-get? pool next-cycle) err-pool-cycle))
+		)
 
-        ;; Assert that we're in the voting window (aka registration window was missed)
-        (asserts! (is-eq (get-current-window) voting) err-not-in-voting-window)
+		;; Assert that we're in the voting window (aka registration window was missed)
+		(asserts! (is-eq (get-current-window) voting) err-not-in-voting-window)
 
-        ;; Assert that last pool disbursed is false (wasn't already disbursed)
-        (asserts! (not previous-pool-rewards-disbursed) err-rewards-already-disbursed)
+		;; Assert that last pool disbursed is false (wasn't already disbursed)
+		(asserts! (not previous-pool-rewards-disbursed) err-rewards-already-disbursed)
 
-        ;; To review/ask about
-        ;; Penalize stackers by re-stacking but with a pox-reward address of burn address
-        ;; Distributing pox-rewards punishes current signers even if they did nothing wrong?
-        ;; Meanwhile previous signers aren't punished since the pox-rewards are already at the previous threshold wallet
-        ;; (match (as-contract (contract-call? .pox-3 stack-aggregation-commit-indexed pox-burn-address next-cycle))
-        ;;     ok-result
-        ;;         (map-set pool next-cycle (merge
-        ;;             next-pool
-        ;;             {last-aggregation: (some block-height), reward-index: (some ok-result)}
-        ;;         ))
-        ;;     err-result
-        ;;         false
-        ;; )
-        (try! (penalize-helper current-pool))
+		;; To review/ask about
+		;; Penalize stackers by re-stacking but with a pox-reward address of burn address
+		;; Distributing pox-rewards punishes current signers even if they did nothing wrong?
+		;; Meanwhile previous signers aren't punished since the pox-rewards are already at the previous threshold wallet
+		;; (match (as-contract (contract-call? .pox-3 stack-aggregation-commit-indexed pox-burn-address next-cycle))
+		;;     ok-result
+		;;         (map-set pool next-cycle (merge
+		;;             next-pool
+		;;             {last-aggregation: (some block-height), reward-index: (some ok-result)}
+		;;         ))
+		;;     err-result
+		;;         false
+		;; )
+		(try! (penalize-helper current-pool))
 
-        ;; Change peg-state to "bad-peg"
-        (contract-call? .sbtc-registry set-peg-state false)
+		;; Change peg-state to "bad-peg"
+		(contract-call? .sbtc-registry set-peg-state false)
 
-    )
+	)
 )
 
 ;; Penalize helper
 (define-private (penalize-helper (penalized-pool
-        {
-            stackers: (list 100 principal),
-            stacked: uint,
-            threshold-wallet-candidates: (list 100 { version: (buff 1), hashbytes: (buff 32) }),
-            threshold-wallet: (optional { version: (buff 1), hashbytes: (buff 32) }),
-            last-aggregation: (optional uint),
-            reward-index: (optional uint),
-            balance-transferred: bool,
-            rewards-disbursed: bool
-        }
-    ))
-    (as-contract (fold mass-delegate-stack-extend (get stackers penalized-pool) (ok {stacker: tx-sender, unlock-burn-height: u0, pox-addr: pox-burn-address})))
+		{
+			stackers: (list 100 principal),
+			stacked: uint,
+			threshold-wallet-candidates: (list 100 { version: (buff 1), hashbytes: (buff 32) }),
+			threshold-wallet: (optional { version: (buff 1), hashbytes: (buff 32) }),
+			last-aggregation: (optional uint),
+			reward-index: (optional uint),
+			balance-transferred: bool,
+			rewards-disbursed: bool
+		}
+	))
+	(as-contract (fold mass-delegate-stack-extend (get stackers penalized-pool) (ok {stacker: tx-sender, unlock-burn-height: u0, pox-addr: pox-burn-address})))
 )
 
 ;; mass delegate stack extender helper for either penalizing or concluded vote
 (define-private (mass-delegate-stack-extend (stacker principal) (pox-return (response {stacker: principal, unlock-burn-height: uint, pox-addr: { version: (buff 1), hashbytes: (buff 32) }} uint)))
-    (let
-        (
-            (unwrap-response (try! pox-return))
-            (param-pox-addr (get pox-addr unwrap-response))
-            (extend-delegate-response (unwrap! (contract-call? .pox-3 delegate-stack-extend stacker param-pox-addr u1) err-mass-delegate-stack-extend))
-            (extend-delegate-stacker (get stacker extend-delegate-response))
-            (extend-delegate-unlock-burn-height (get unlock-burn-height extend-delegate-response))
-        )
+	(let
+		(
+			(unwrap-response (try! pox-return))
+			(param-pox-addr (get pox-addr unwrap-response))
+			(extend-delegate-response (unwrap! (contract-call? .pox-3 delegate-stack-extend stacker param-pox-addr u1) err-mass-delegate-stack-extend))
+			(extend-delegate-stacker (get stacker extend-delegate-response))
+			(extend-delegate-unlock-burn-height (get unlock-burn-height extend-delegate-response))
+		)
 
-        ;; Assert previous pox-return was (ok ...)
-        (unwrap! pox-return err-mass-delegate-stack-extend)
+		;; Assert previous pox-return was (ok ...)
+		(unwrap! pox-return err-mass-delegate-stack-extend)
 
-        (ok {stacker: extend-delegate-stacker, unlock-burn-height: extend-delegate-unlock-burn-height, pox-addr: param-pox-addr})
-    )
+		(ok {stacker: extend-delegate-stacker, unlock-burn-height: extend-delegate-unlock-burn-height, pox-addr: param-pox-addr})
+	)
 )
 
 
 ;;; Protocol Functions ;;;;
 ;; Protocol function for updating threshold-percent
 (define-public (update-threshold-percent (new-threshold-percent uint))
-    (begin
+	(begin
 
-        ;; Assert that caller is protocol caller
-        (unwrap! (is-protocol-caller) err-not-protocol-caller)
+		;; Assert that caller is protocol caller
+		(unwrap! (is-protocol-caller) err-not-protocol-caller)
 
-        ;; Assert that new-threshold-percent is greater u500 or less than u950
-        (asserts! (and (>= new-threshold-percent u500) (<= new-threshold-percent u950)) err-threshold-percent-out-of-range)
+		;; Assert that new-threshold-percent is greater u500 or less than u950
+		(asserts! (and (>= new-threshold-percent u500) (<= new-threshold-percent u950)) err-threshold-percent-out-of-range)
 
-        ;; Update threshold-percent
-        (ok (var-set threshold-consensus new-threshold-percent))
-    )
+		;; Update threshold-percent
+		(ok (var-set threshold-consensus new-threshold-percent))
+	)
 )
+
+
+;;
+;; Functions about allowance of delegation/stacking contract calls
+;;
+
+;; Give a contract-caller authorization to call stacking methods
+;;  normally, stacking methods may only be invoked by _direct_ transactions
+;;   (i.e., the tx-sender issues a direct contract-call to the stacking methods)
+;;  by issuing an allowance, the tx-sender may call through the allowed contract
+(define-public (allow-contract-caller (caller principal) (until-burn-ht (optional uint)))
+	(begin
+		(asserts! (is-eq tx-sender contract-caller) err-stacking-permission-denied)
+		(ok (map-set allowance-contract-callers
+			{ sender: tx-sender, contract-caller: caller}
+			{ until-burn-ht: until-burn-ht}))))
+
+;; Revokes contract-caller authorization to call stacking methods
+(define-public (disallow-contract-caller (caller principal))
+	(begin
+		(asserts! (is-eq tx-sender contract-caller) err-stacking-permission-denied)
+		(ok (map-delete allowance-contract-callers { sender: tx-sender, contract-caller: caller}))))
+
+;; Verifies that the contract caller has allowance to handle the tx-sender's stacking
+(define-read-only (check-caller-allowed)
+	(or (is-eq tx-sender contract-caller)
+		(let ((caller-allowed
+			;; if not in the caller map, return false
+			(unwrap! (map-get? allowance-contract-callers
+					{ sender: tx-sender, contract-caller: contract-caller})
+			  	false))
+		  (expires-at
+			;; if until-burn-ht not set, then return true (because no expiry)
+			(unwrap! (get until-burn-ht caller-allowed) true)))
+		  ;; is the caller allowance still valid
+	  (< burn-block-height expires-at))))
+
+;; Returns the burn height at which a particular contract is allowed to stack for a particular principal.
+;; The result is (some (some X)) if X is the burn height at which the allowance terminates.
+;; The result is (some none) if the caller is allowed indefinitely.
+;; The result is none if there is no allowance record.
+(define-read-only (get-allowance-contract-callers (sender principal) (calling-contract principal))
+	(map-get? allowance-contract-callers { sender: sender, contract-caller: calling-contract}))
