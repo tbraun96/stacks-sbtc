@@ -23,10 +23,12 @@
 
 ;; Dust limit placeholder for checking that pox-rewards were disbursed (in sats)
 (define-constant dust-limit u100)
+
 ;; Signer minimal is 10k STX
 (define-constant signer-minimal u10000000000)
 
 (define-constant pox-info (unwrap-panic (contract-call? .pox-3 get-pox-info)))
+(define-constant stacking-threshold-25 u20000)
 
 ;;; oks ;;;
 (define-constant ok-vote-existing-candidate-lost (ok u0))
@@ -73,15 +75,20 @@
 (define-constant err-not-in-voting-window (err u6033))
 (define-constant err-set-peg-state (err u6034))
 (define-constant err-not-protocol-caller (err u6035))
-(define-constant err-threshold-percent-out-of-range (err u6036))
+(define-constant err-out-of-range (err u6036))
 (define-constant err-threshold-to-scriptpubkey (err u6037))
 (define-constant err-mass-delegate-stack-extend (err u6038))
 (define-constant err-wallet-consensus-reached-execution (err u6039))
 (define-constant err-vote-or (err u6040))
 (define-constant err-candidates-overflow (err u6041))
 (define-constant err-stacking-permission-denied (err u6042))
+(define-constant err-not-enough-locked-stx (err u6043))
+(define-constant err-already-activated (err u6044))
 
 ;;; variables ;;;
+
+;; Minimum amount of 1m locked STX for the pool to be active
+(define-data-var minimal-pool-amount-for-activation uint u1000000000000)
 
 ;; Threshold consensus (in 3 digit %)
 (define-data-var threshold-consensus uint u700)
@@ -226,6 +233,13 @@
 (define-read-only (current-pox-reward-cycle)
 	(burn-height-to-reward-cycle burn-block-height))
 
+(define-read-only (was-enough-stx-stacked (locked-amount-ustx uint))
+	(>= locked-amount-ustx (var-get minimal-pool-amount-for-activation)))
+
+(define-read-only (is-active-in-cycle (cycle uint))
+	(let ((pool-details (unwrap! (map-get? pool cycle) err-pool-cycle)))
+		(asserts! (was-enough-stx-stacked (get stacked pool-details)) err-not-enough-locked-stx)
+		(ok true)))
 
 ;;;;;;; Disbursement Functions ;;;;;;;
 ;; Function that proves POX rewards have been disbursed from the previous threshold wallet to the previous pool signers. This happens in x steps:
@@ -353,27 +367,19 @@
 			error (asserts! false (err (+ (to-uint error) const-second-pox-error))))
 
 		;; Stack aggregate-commit
-		;; As pointed out by Friedger, this fails when the user is already stacking. Match err-branch takes care of this with stack-delegate-increase instead.
+		;; This fails when the user is already stacking.
+		;; It does not matter because stx are already locked and ready to be extended in the next cycle
 		(match (as-contract (contract-call? .pox-3 stack-aggregation-commit-indexed pox-addr next-cycle))
 			ok-branch
+				;; user's stx is ready to earn
 				true
 			err-branch
-				(begin
-
-					;; Assert stacker isn't attempting to decrease
-					(asserts! (>= amount-ustx (get locked signer-account)) err-decrease-forbidden)
-
-					;; Delegate-stack-increase for next cycle so that there is no cooldown
-					(try! (match (as-contract (contract-call? .pox-3 delegate-stack-increase new-signer pox-addr (- amount-ustx (get locked signer-account))))
-					success (ok true)
-					error (err (to-uint error))))
-					true
-				)
+				;; user's stx won't earn for next cycle
+				true
 		)
 
 		;; Record pre-signer
 		(ok (map-set pre-signer {stacker: tx-sender, pool: next-cycle} true))
-
 	)
 )
 
@@ -478,6 +484,9 @@
 			(next-pool-signer (unwrap! (map-get? signer {stacker: tx-sender, pool: next-cycle}) err-not-signer))
 			(next-pool-signer-amount (get amount next-pool-signer))
 		)
+
+		;; Assert active state
+		(asserts! (was-enough-stx-stacked next-pool-total-stacked) err-not-enough-stacked)
 
 		;; Assert we're in a good-peg state
 		(asserts! (contract-call? .sbtc-registry current-peg-state) err-not-in-good-peg-state)
@@ -771,10 +780,24 @@
 		(unwrap! (is-protocol-caller) err-not-protocol-caller)
 
 		;; Assert that new-threshold-percent is greater u500 or less than u950
-		(asserts! (and (>= new-threshold-percent u500) (<= new-threshold-percent u950)) err-threshold-percent-out-of-range)
+		(asserts! (and (>= new-threshold-percent u500) (<= new-threshold-percent u950)) err-out-of-range)
 
 		;; Update threshold-percent
 		(ok (var-set threshold-consensus new-threshold-percent))
+	)
+)
+
+(define-public (update-minimum-pool-amount-for-activation (new-minimum uint))
+	(begin
+
+		;; Assert that caller is protocol caller
+		(unwrap! (is-protocol-caller) err-not-protocol-caller)
+
+		;; Assert that new-minimum is greater than the static minimum for stacking
+		(asserts! (and (>= new-minimum (/ (get total-liquid-supply-ustx pox-info) stacking-threshold-25))) err-out-of-range)
+
+		;; Update minimum amount
+		(ok (var-set minimal-pool-amount-for-activation new-minimum))
 	)
 )
 
