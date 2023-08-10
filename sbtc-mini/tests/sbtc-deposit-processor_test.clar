@@ -1,7 +1,7 @@
 (define-constant err-burn-tx-already-processed (err u2000))
 
-(define-constant err-peg-in-expired (err u4000))
-(define-constant err-not-a-peg-wallet (err u4001))
+(define-constant err-deposit-expired (err u4000))
+(define-constant err-not-a-sbtc-wallet (err u4001))
 (define-constant err-invalid-spending-pubkey (err u4003))
 (define-constant err-peg-value-not-found (err u4005))
 (define-constant err-missing-witness (err u4006))
@@ -37,7 +37,7 @@
 
 (define-constant version-P2TR 0x06)
 
-(define-constant mock-peg-wallet { version: version-P2TR, hashbytes: 0xf855ca43402fb99cde0e3e634b175642561ff584fe76d1686630d8fd2ea93b36 })
+(define-constant mock-sbtc-wallet { version: version-P2TR, hashbytes: 0xf855ca43402fb99cde0e3e634b175642561ff584fe76d1686630d8fd2ea93b36 })
 (define-constant mock-peg-cycle u0)
 (define-constant mock-burnchain-height u3)
 
@@ -80,7 +80,7 @@
 		;; Add the test contract to the protocol contract set.
 		(try! (prepare-add-test-to-protocol))
 		;; Add mock peg wallet adress to registry for test cycle
-		(try! (contract-call? .sbtc-registry insert-cycle-peg-wallet mock-peg-cycle mock-peg-wallet))
+		(try! (contract-call? .sbtc-registry insert-cycle-sbtc-wallet mock-peg-cycle mock-sbtc-wallet))
 		;; Mine a fake burnchain block that includes mock transactions
 		(try! (contract-call? .sbtc-testnet-debug-controller simulate-mine-solo-burnchain-block mock-burnchain-height (list mock-tx-1)))
 		(unwrap! (contract-call? .clarity-bitcoin mock-add-burnchain-block-header-hash mock-burnchain-height mock-block-header-hash-1-be) (err u112233))
@@ -97,7 +97,7 @@
 				recipient: 'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5
 				}
 			)
-			(result (unwrap! (contract-call? .sbtc-peg-in-processor verify-extract-unlock-script script) (err {expected: none, actual: none, msg: "Verification or extraction failed"})))
+			(result (unwrap! (contract-call? .sbtc-deposit-processor verify-extract-unlock-script script) (err {expected: none, actual: none, msg: "Verification or extraction failed"})))
 		)
 		(asserts! (is-eq result expected) (err {expected: (some expected), actual: (some result), msg: "Result mismatch"}))
 		(ok true)
@@ -109,7 +109,7 @@
 			;; FF in place of sbtc opcode
 			(script 0x18ff001a7321b74e2b6a7e949e6c4ad313035b16650950170075200046422d30ec92c568e21be4b9579cfed8e71ba0702122b014755ae0e23e3563ac)
 			(expected err-script-invalid-opcode)
-			(result (contract-call? .sbtc-peg-in-processor verify-extract-unlock-script script))
+			(result (contract-call? .sbtc-deposit-processor verify-extract-unlock-script script))
 		)
 		(asserts! (is-eq result expected) (err {expected: (some expected), actual: (some result), msg: "Result mismatch"}))
 		(ok true)
@@ -121,7 +121,7 @@
 			;; FF in place of payload version
 			(script 0x183cff1a7321b74e2b6a7e949e6c4ad313035b16650950170075200046422d30ec92c568e21be4b9579cfed8e71ba0702122b014755ae0e23e3563ac)
 			(expected err-script-invalid-version)
-			(result (contract-call? .sbtc-peg-in-processor verify-extract-unlock-script script))
+			(result (contract-call? .sbtc-deposit-processor verify-extract-unlock-script script))
 		)
 		(asserts! (is-eq result expected) (err {expected: (some expected), actual: (some result), msg: "Result mismatch"}))
 		(ok true)
@@ -133,7 +133,7 @@
 			;; FF in place of OP_DROP
 			(script 0x183c001a7321b74e2b6a7e949e6c4ad313035b166509501700ff200046422d30ec92c568e21be4b9579cfed8e71ba0702122b014755ae0e23e3563ac)
 			(expected err-script-not-op-drop)
-			(result (contract-call? .sbtc-peg-in-processor verify-extract-unlock-script script))
+			(result (contract-call? .sbtc-deposit-processor verify-extract-unlock-script script))
 		)
 		(asserts! (is-eq result expected) (err {expected: (some expected), actual: (some result), msg: "Result mismatch"}))
 		(ok true)
@@ -145,7 +145,7 @@
 			;; removed OP_CHECKSIG at the end (0xac)
 			(script 0x183c001a7321b74e2b6a7e949e6c4ad313035b16650950170075200046422d30ec92c568e21be4b9579cfed8e71ba0702122b014755ae0e23e3563)
 			(expected err-script-checksig-missing)
-			(result (contract-call? .sbtc-peg-in-processor verify-extract-unlock-script script))
+			(result (contract-call? .sbtc-deposit-processor verify-extract-unlock-script script))
 		)
 		(asserts! (is-eq result expected) (err {expected: (some expected), actual: (some result), msg: "Result mismatch"}))
 		(ok true)
@@ -157,19 +157,19 @@
 			;; Invalid contract name (0xff)
 			(script 0x193c001a7321b74e2b6a7e949e6c4ad313035b166509501701ff75200046422d30ec92c568e21be4b9579cfed8e71ba0702122b014755ae0e23e3563ac)
 			(expected err-script-invalid-principal)
-			(result (contract-call? .sbtc-peg-in-processor verify-extract-unlock-script script))
+			(result (contract-call? .sbtc-deposit-processor verify-extract-unlock-script script))
 		)
 		(asserts! (is-eq result expected) (err {expected: (some expected), actual: (some result), msg: "Result mismatch"}))
 		(ok true)
 	)
 )
 
-;; @name Test peg-in reveal proof (mints sBTC)
+;; @name Test deposit reveal proof (mints sBTC)
 ;; @mine-blocks-before 5
-(define-public (test-peg-in-reveal)
+(define-public (test-deposit-reveal)
 	(let (
     (result
-      (contract-call? .sbtc-peg-in-processor complete-peg-in
+      (contract-call? .sbtc-deposit-processor complete-deposit
 			mock-peg-cycle
 			mock-burnchain-height ;; burn-height
 			mock-tx-1 ;; tx
@@ -193,8 +193,8 @@
 
 ;; @name Cannot submit the same proof twice
 ;; @mine-blocks-before 5
-(define-public (test-peg-in-reveal-no-repeat)
-	(let ((result (contract-call? .sbtc-peg-in-processor complete-peg-in
+(define-public (test-deposit-reveal-no-repeat)
+	(let ((result (contract-call? .sbtc-deposit-processor complete-deposit
 			mock-peg-cycle
 			mock-burnchain-height ;; burn-height
 			mock-tx-1 ;; tx
@@ -208,7 +208,7 @@
 			mock-coinbase-tx-1 ;; ctx
 			(list mock-txid-1) ;; cproof
 			))
-		(result2 (contract-call? .sbtc-peg-in-processor complete-peg-in
+		(result2 (contract-call? .sbtc-deposit-processor complete-deposit
 			mock-peg-cycle
 			mock-burnchain-height ;; burn-height
 			mock-tx-1 ;; tx

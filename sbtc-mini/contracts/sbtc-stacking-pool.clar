@@ -63,7 +63,7 @@
 (define-constant err-unhandled-request (err u6021))
 (define-constant err-invalid-penalty-type (err u6022))
 (define-constant err-already-disbursed (err u6023))
-(define-constant err-not-handoff-contract (err u6024))
+(define-constant err-not-hand-off-contract (err u6024))
 (define-constant err-parsing-btc-tx (err u6025))
 (define-constant err-threshold-wallet-is-none (err u6026))
 (define-constant err-tx-not-mined (err u6027))
@@ -150,7 +150,7 @@
 ;; Map of reward cyle to block height of last commit
 (define-map last-aggregation uint uint)
 
-;; Allowed contract-callers handling a sbtc stacking activity.
+;; Allowed contract-callers handling the sbtc stacking activity.
 (define-map allowance-contract-callers
 	{ sender: principal, contract-caller: principal}
 	{until-burn-ht: (optional uint)})
@@ -586,17 +586,17 @@
 ;;;;;;; Transfer Functions ;;;;;;;
 
 ;; Transfer function for proving that current/soon-to-be-old signers have transferred the peg balance to the next threshold-wallet
-;; Can only be called by the sbtc-peg-transfer/handoff contract. If successful, balance-disbursed is set to true for the previous pool
+;; Can only be called by the sbtc-hand-off/hand-off contract. If successful, balance-disbursed is set to true for the previous pool
 (define-public (balance-was-transferred (previous-cycle uint))
 	(let
 		(
 			(previous-pool (unwrap! (map-get? pool previous-cycle) err-pool-cycle))
 		)
 
-			;; Assert that contract-caller is .sbtc-peg-transfer / handoff contract
-			(asserts! (is-eq contract-caller .sbtc-peg-transfer) err-not-handoff-contract)
+			;; Assert that contract-caller is .sbtc-hand-off contract
+			(asserts! (is-eq contract-caller .sbtc-hand-off) err-not-hand-off-contract)
 
-			;; peg-transfer /handoff success, update relevant vars/maps
+			;; Hand-off success, update relevant vars/maps
 			(ok (map-set pool previous-cycle (merge
 				previous-pool
 				{balance-transferred: true}
@@ -623,8 +623,8 @@
 		;; Assert that we're in the transfer window
 		(asserts! (is-eq (get-current-window) transfer) err-not-in-transfer-window)
 
-		;; Assert that pending-wallet-peg-outs is not equal to zero
-		(asserts! (> (contract-call? .sbtc-registry get-pending-wallet-peg-outs) u0) err-unhandled-request)
+		;; Assert that pending-wallet-withdrawals is not equal to zero
+		(asserts! (> (contract-call? .sbtc-registry get-pending-wallet-withdrawals) u0) err-unhandled-request)
 
 		;; Penalize stackers by re-stacking but with a pox-reward address of burn address
 		(try! (penalize-helper current-pool))
@@ -653,8 +653,8 @@
 		;; Assert that next-pool-threshold-wallet is-none
 		(asserts! (is-some next-pool-threshold-wallet) err-unhandled-request)
 
-		;; Assert that pending-wallet-peg-outs is equal to zero
-		(asserts! (is-eq (contract-call? .sbtc-registry get-pending-wallet-peg-outs) u0) err-unhandled-request)
+		;; Assert that pending-wallet-withdrawals is equal to zero
+		(asserts! (is-eq (contract-call? .sbtc-registry get-pending-wallet-withdrawals) u0) err-unhandled-request)
 
 		;; Penalize stackers by re-stacking but with a pox-reward address of burn address
 		(try! (penalize-helper current-pool))

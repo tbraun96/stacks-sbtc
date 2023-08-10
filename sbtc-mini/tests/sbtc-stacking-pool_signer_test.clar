@@ -22,13 +22,13 @@
 ;; @name transfer for unknown pool fails
 (define-public (test-balance-was-transferred)
 	(begin (let (
-		(result (contract-call? .sbtc-peg-transfer relay-handoff-fulfillment u2101 0x 0x u1 u1 (list) 0x 0x 0x (list))))
+		(result (contract-call? .sbtc-hand-off relay-hand-off-fulfillment u2101 0x 0x u1 u1 (list) 0x 0x 0x (list))))
 		(asserts! (is-err result)
 			(err "Should return error"))
 		(asserts! (is-eq (unwrap-err-panic result) u7000)
 			(err (concat "Should return err u0, not " (error-to-string (unwrap-err-panic result)))))
 		(ok true))))
 
-;; errors from sbtc-peg-transfer
+;; errors from sbtc-hand-off
 (define-private (error-to-string (error uint))
 	(unwrap! (element-at? (list "err-current-pool-not-found") (- error u7000)) "unknown error"))

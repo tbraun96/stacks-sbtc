@@ -1,14 +1,14 @@
-(define-constant peg-out-state-requested 0x00)
-(define-constant peg-out-state-fulfilled 0x01)
-(define-constant peg-out-state-reclaimed 0x02)
+(define-constant withdrawal-state-requested 0x00)
+(define-constant withdrawal-state-fulfilled 0x01)
+(define-constant withdrawal-state-reclaimed 0x02)
 
 (define-constant sbtc-token-burnchain-lock-time u2100)
 
 (define-constant err-token-lock-failed (err u5700))
 (define-constant err-token-unlock-failed (err u5701))
-(define-constant err-unknown-peg-out-request (err u5702))
-(define-constant err-peg-out-not-epxired (err u5703))
-(define-constant err-peg-out-not-requested (err u5704))
+(define-constant err-unknown-withdrawal-request (err u5702))
+(define-constant err-withdrawal-not-epxired (err u5703))
+(define-constant err-withdrawal-not-requested (err u5704))
 (define-constant err-wrong-destination (err u5705))
 (define-constant err-unacceptable-expiry-height (err u5706))
 (define-constant err-wrong-value (err u5707))
@@ -22,7 +22,7 @@
 	;; Extract data from the Bitcoin transaction/tapscript:
 	;; - The total BTC value requested to be pegged out, in sats
 	;; - The principal pegging out
-	;; - The burnchain peg-out expiry height
+	;; - The burnchain withdrawal expiry height
 
 	;; To retrieve the principal of the entity pegging out (sender):
 	;; message = something like amount + recipient scriptPubkey + nonce
@@ -40,7 +40,7 @@
 		)
 )
 
-(define-public (register-peg-out-request 
+(define-public (register-withdrawal-request 
 	(burn-height uint)
 	(tx (buff 4096))
 	(p2tr-unlock-script (buff 128))
@@ -57,7 +57,7 @@
 		(burn-wtxid (try! (contract-call? .clarity-bitcoin was-segwit-tx-mined-compact burn-height tx header tx-index tree-depth wproof 0x 0x ctx cproof)))
 		;; get the peg out data
 		;; #[filter(ts)]
-		(peg-out-data (try! (extract-request-data tx p2tr-unlock-script)))
+		(withdrawal-data (try! (extract-request-data tx p2tr-unlock-script)))
 		)
 		;; There are still open questions about this part of the API.
 		;; We can submit the P2TR funding transaction along with unlock script
@@ -70,11 +70,11 @@
 		;; reached the minimum amount of confirmations.
 		(try! (contract-call? .sbtc-registry assert-new-burn-wtxid-and-height burn-wtxid burn-height))
 		;; check that the expiry height is acceptable
-		(asserts! (>= (get expiry-burn-height peg-out-data) (+ burn-block-height sbtc-token-burnchain-lock-time)) err-unacceptable-expiry-height)
+		(asserts! (>= (get expiry-burn-height withdrawal-data) (+ burn-block-height sbtc-token-burnchain-lock-time)) err-unacceptable-expiry-height)
 		;; lock sender's the tokens
-		(unwrap! (contract-call? .sbtc-token protocol-lock (get value peg-out-data) (get sender peg-out-data)) err-token-lock-failed)
-		;; insert the request, returns the peg-out request-id
-		(contract-call? .sbtc-registry insert-peg-out-request (get value peg-out-data) (get sender peg-out-data) (get expiry-burn-height peg-out-data) (get destination peg-out-data) p2tr-unlock-script)
+		(unwrap! (contract-call? .sbtc-token protocol-lock (get value withdrawal-data) (get sender withdrawal-data)) err-token-lock-failed)
+		;; insert the request, returns the withdrawal request-id
+		(contract-call? .sbtc-registry insert-withdrawal-request (get value withdrawal-data) (get sender withdrawal-data) (get expiry-burn-height withdrawal-data) (get destination withdrawal-data) p2tr-unlock-script)
 	)
 )
 
@@ -91,8 +91,8 @@
 		)
 )
 
-(define-public (relay-peg-out-fulfilment
-	(peg-out-request-id uint)
+(define-public (relay-withdrawal-fulfilment
+	(withdrawal-request-id uint)
 	(burn-height uint)
 	(tx (buff 4096))
 	(header (buff 80))
@@ -109,37 +109,37 @@
 		;; get the fulfilment data
 		;; #[filter(ts)]
 		(fulfilment-data (try! (extract-fulfilment-data tx)))
-		;; get the pending peg-out and mark it as settled.
+		;; get the pending withdrawal and mark it as settled.
 		;; the call will fail if the request is no longer pending.
-		(peg-out-request (try! (contract-call? .sbtc-registry get-and-settle-pending-peg-out-request peg-out-request-id peg-out-state-fulfilled)))
+		(withdrawal-request (try! (contract-call? .sbtc-registry get-and-settle-pending-withdrawal-request withdrawal-request-id withdrawal-state-fulfilled)))
 		)
-		;; we do not actually care who fulfilled the peg-out request. Anyone
+		;; we do not actually care who fulfilled the withdrawal request. Anyone
 		;; can pay the btc, it does not have to come from the peg wallet.
 
 		;; check if the tx has not been processed before and if it
 		;; reached the minimum amount of confirmations.
 		(try! (contract-call? .sbtc-registry assert-new-burn-wtxid-and-height burn-wtxid burn-height))
 		;; check if the right destination address got paid
-		(asserts! (is-eq (get destination fulfilment-data) (get destination peg-out-request)) err-wrong-destination)
+		(asserts! (is-eq (get destination fulfilment-data) (get destination withdrawal-request)) err-wrong-destination)
 		;; check if the requested value was paid
 		;; possible feature: allow transactions to partially peg out a request instead of
 		;; all-or-nothing.
-		(asserts! (>= (get value fulfilment-data) (get value peg-out-request)) err-wrong-value)
+		(asserts! (>= (get value fulfilment-data) (get value withdrawal-request)) err-wrong-value)
 		;; burn the locked user tokens
-		(contract-call? .sbtc-token protocol-burn-locked (get value peg-out-request) (get sender peg-out-request))
+		(contract-call? .sbtc-token protocol-burn-locked (get value withdrawal-request) (get sender withdrawal-request))
 	)
 )
 
 ;; unlocks the sBTC tokens after expiry
-(define-public (reclaim-locked-tokens (peg-out-request-id uint))
+(define-public (reclaim-locked-tokens (withdrawal-request-id uint))
 	(let (
-		;; get the pending peg-out and mark it as settled.
+		;; get the pending withdrawal and mark it as settled.
 		;; the call will fail if the request is no longer pending.
-		(peg-out-request (try! (contract-call? .sbtc-registry get-and-settle-pending-peg-out-request peg-out-request-id peg-out-state-reclaimed)))
+		(withdrawal-request (try! (contract-call? .sbtc-registry get-and-settle-pending-withdrawal-request withdrawal-request-id withdrawal-state-reclaimed)))
 		)
-		;; check if the peg-out request has expired (pending check is done above)
-		(asserts! (<= (get expiry-burn-height peg-out-request) burn-block-height) err-peg-out-not-epxired)
+		;; check if the withdrawal request has expired (pending check is done above)
+		(asserts! (<= (get expiry-burn-height withdrawal-request) burn-block-height) err-withdrawal-not-epxired)
 		;; unlock the locked user tokens
-		(contract-call? .sbtc-token protocol-unlock (get value peg-out-request) (get sender peg-out-request))
+		(contract-call? .sbtc-token protocol-unlock (get value withdrawal-request) (get sender withdrawal-request))
 	)
 )

@@ -1,21 +1,21 @@
-;; sbtc-mini-peg-transfer
-;; peg-transfer processor for handing-off pegged-BTC from threshold-wallet (n) to newly-voted-for threshold-wallet (n+1)
+;; sbtc-mini-hand-off
+;; Hand-off processor for handing-off pegged-BTC from threshold-wallet (n) to newly-voted-for threshold-wallet (n+1)
 
-;; Handoff Commit/Fund -> On BTC
+;; Hand-off Commit/Fund -> On BTC
 ;; 1. Stackers/signers in cycle/pool N create & fund a Taproot address/script with the current peg-balance that allows for two things:
 ;;   2. The transaction can be consumed (transferred from wallet n to n+1) a single signature from any of the stackers/signers in cycle/pool N+1
 ;;   3. The transaction is NOT picked up by the end of the transfer window in n & is reclaimed by the stackers/signers in cycle/pool N
 
-;; Handoff Reveal -> On STX
+;; Hand-off Reveal -> On STX
 ;; 2. The transaction is consumed & the pegged-BTC is succesfully transferred to the new threshold-wallet (n+1)
 ;;   2.a. Any observer can verify transfer with a call to .sbtc contracts with the Bitcoin txid of the transfer transaction
 ;;   This will mark a succesful transfer window & the current pool is moved to the audit/penalty window
 
-;; Handoff Reclaim/Penalty -> On BTC/STX
+;; Hand-off Reclaim/Penalty -> On BTC/STX
 ;; 3. The transaction is NOT consumed & the pegged-BTC is NOT transferred to the new threshold-wallet (n+1)
 
 ;; We don't know what that transaction type will look like: 1 input from previous address that goes to the next address
-;; What is the peg-wallet address look like? 
+;; What is the sbtc-wallet address look like?
 ;; How are / will the signers going to consolidate inputs/outputs?
 ;; Or is this done over many validations?
 ;; How do we keep track of the pegged-BTC balance?
@@ -42,7 +42,7 @@
 (define-constant err-threshold-to-scriptpubkey (err u7011))
 
 ;; Placeholder to make sbtc-stacking-pool happy
-(define-public (relay-handoff-fulfillment
+(define-public (relay-hand-off-fulfillment
     (burn-height uint)
 	(tx (buff 1024))
 	(header (buff 80))
