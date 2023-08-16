@@ -358,7 +358,7 @@
 		(asserts! (is-eq (get-current-window) registration)  err-not-in-registration-window)
 
 		;; Delegate-stx to their PoX address
-		(match (contract-call? .pox-3 delegate-stx amount-ustx (as-contract tx-sender) none (some pox-addr))
+		(match (contract-call? .pox-3 delegate-stx amount-ustx (as-contract tx-sender) none none)
 			success true
 			error (asserts! false (err (+ (to-uint error) const-first-pox-error))))
 
@@ -550,40 +550,46 @@
 
 					;; Update signer map
 					(map-set signer-registrations-by-stacker-cycle {stacker: tx-sender, cycle: next-cycle} (merge next-cycle-signer { vote: (some pox-addr) }))
-
 					;; Asserts! logic to check if 70% wallet consensus has been reached
 					(asserts!
 						(and
-							;; Assert that new-candidate-votes is greater than or equal to 70% of next-pool-total-stacked
+							;; Assert that new-candidate-votes is greater than or equal to 70% of next-cycle-total-stacked
 							(>= (/ (* new-candidate-votes u1000) next-cycle-total-stacked) (var-get threshold-consensus))
 
 							;; Assert that extend-and-commit-bool is true (both delegate-stack-extend & aggregate-commit-indexed succeeded)
-							(match (fold mass-delegate-stack-extend next-cycle-stackers (ok {stacker: tx-sender, unlock-burn-height: u0, pox-addr: pox-addr}))
-								passed-result
+							(match (as-contract (fold mass-delegate-stack-extend next-cycle-stackers (ok {stacker: tx-sender, unlock-burn-height: u0, pox-addr: pox-addr})))
+								success-extend
 									(match (as-contract (contract-call? .pox-3 stack-aggregation-commit-indexed pox-addr next-cycle))
 										;; Okay result, update pool map with last-aggregation (block-height) & reward-index
-										ok-result
+										success-commit
 											(map-set stacking-details-by-cycle next-cycle (merge
 												next-stacking-cycle-details
-												{last-aggregation: (some block-height), reward-index: (some ok-result), threshold-wallet: (some pox-addr)}
+												{last-aggregation: (some block-height), reward-index: (some success-commit), threshold-wallet: (some pox-addr)}
 											))
-										err-result
-										;; Returning false to signify that 70% consensus has not been reached
-										(begin
-											(print (/ (* new-candidate-votes u1000) next-cycle-total-stacked))
-											false
-										)
+										err-commit
+											;; Returning false to signify that commit failed
+											(begin
+   											(print (/ (* new-candidate-votes u1000) next-cycle-total-stacked))
+												(print err-commit)
+												false)
 									)
-								err-result
-									false
+								err-extend
+									;; Returning false to signify that extend failed
+									(begin
+										(print err-extend)
+										false)
 							)
 						)
-					ok-vote-existing-candidate-lost)
-
+						;; result when candidate did not reach 70% consensus or extend failed
+						(begin
+							(print (/ (* new-candidate-votes u1000) next-cycle-total-stacked))
+							ok-vote-existing-candidate-lost)
+					)
+					;; result when candidate was accepted and stackers extended
 					ok-vote-existing-candidate-won
 			)
 		)
-
+		;; result new candidate path
 		ok-voted
 	)
 )

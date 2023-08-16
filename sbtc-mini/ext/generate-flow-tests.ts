@@ -117,7 +117,17 @@ function generateBlocks(contractPrincipal: string, calls: FunctionBody) {
     // mine empty blocks
     const mineBlocksBefore =
       parseInt(callAnnotations["mine-blocks-before"] as string) || 0;
-      console.log(callInfo.contractName, callInfo.functionName, mineBlocksBefore)
+    const caller = callAnnotations["caller"] as string;
+    if (caller) {
+      if (blockStarted) {
+        code += `
+        ]);
+        block.receipts.map(({result}) => result.expectOk());
+        `;
+        blockStarted = false;
+      }
+      code += `callerAddress = accounts.get('${caller}')!.address;`;
+    }
       if (mineBlocksBefore >= 1) {
         if (blockStarted) {
           code += `

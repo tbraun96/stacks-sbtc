@@ -124,6 +124,11 @@ path = 'tests/sbtc-stacking-pool_inactive_flow_test.clar'
 clarity_version = 2
 epoch = 2.4
 
+[contracts.sbtc-stacking-pool_two_signers_flow_test]
+path = 'tests/sbtc-stacking-pool_two_signers_flow_test.clar'
+clarity_version = 2
+epoch = 2.4
+
 [contracts.sbtc-btc-tx-helper_test]
 path = 'tests/sbtc-btc-tx-helper_test.clar'
 clarity_version = 2

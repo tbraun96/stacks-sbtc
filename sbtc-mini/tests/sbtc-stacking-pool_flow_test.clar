@@ -115,10 +115,3 @@
 		(asserts! (is-err result) err-error-expected)
         (asserts! (is-eq result err-pool-cycle) result)
 		(ok true)))
-
-(define-public (check-penalty-vote-threshold)
-    (let
-        ((penalty-result
-				(contract-call? .sbtc-stacking-pool penalty-vote-threshold)))
-			(asserts! (is-ok penalty-result) (err (unwrap-err-panic penalty-result)))
-			(ok true)))

@@ -6,7 +6,8 @@
 (define-constant err-ok-expected (err u99001))
 
 (define-constant err-not-enough-locked-stx (err u6010))
-;; @name user can pre-register, register and vote
+
+;; @name user can pre-register, register, but vote fails due to not enough locked STX
 ;; user stacks 10k STX only
 ;; @caller wallet_1
 (define-public (test-inactive-state)
