@@ -1,4 +1,5 @@
 (define-constant err-burn-tx-already-processed (err u2000))
+(define-constant err-minimum-burnchain-confirmations-not-reached (err u2003))
 
 (define-constant err-deposit-expired (err u4000))
 (define-constant err-not-a-sbtc-wallet (err u4001))
@@ -40,6 +41,7 @@
 (define-constant mock-sbtc-wallet { version: version-P2TR, hashbytes: 0xf855ca43402fb99cde0e3e634b175642561ff584fe76d1686630d8fd2ea93b36 })
 (define-constant mock-peg-cycle u0)
 (define-constant mock-burnchain-height u3)
+
 
 ;;(define-constant mock-escrow-pubkey-1 0x6a30ab928118563dc27888d9af98d0138c32a8ed0efc9dcd0bf4cc4b503114de)
 (define-constant mock-escrow-address-1 "bcrt1pdgc2hy5prptrmsnc3rv6lxxszwxr928dpm7fmngt7nxyk5p3zn0qphrsks")
@@ -230,3 +232,23 @@
 	)
 )
 
+;; @name cannot complete deposit if minimum burnchain confirmations not reached
+(define-public (test-minimum-burnchain-confirmations-not-reached)
+  (let ((result (contract-call? .sbtc-deposit-processor complete-deposit
+                     mock-peg-cycle
+                     mock-burnchain-height
+                     mock-tx-1
+                     mock-block-header-1
+                     u1
+                     u1
+                     (list mock-coinbase-wtxid-1)
+                     mock-witness-root-hash-1-le
+                     mock-coinbase-witness-reserved-data
+                     mock-witness-index-1
+                     (concat mock-coinbase-tx-1 0x)
+                     (list mock-txid-1)
+                     )))
+    (asserts! (is-eq result err-minimum-burnchain-confirmations-not-reached) (err {msg: "Expected err-minimum-burnchain-confirmations-not-reached, got", actual: (some result)}))
+    (ok true)
+  )
+)
