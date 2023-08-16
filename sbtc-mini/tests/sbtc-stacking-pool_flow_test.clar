@@ -2,14 +2,16 @@
 (define-constant mock-sbtc-wallet-1 { version: 0x06, hashbytes: 0x1122334455669900112233445566990011223344556699001122334455669900 })
 (define-constant public-key 0x0011223344556699001122334455669900112233445566990011223344556699 )
 (define-constant public-key-2 0x1122334455669900112233445566990011223344556699001122334455669900 )
+(define-constant public-key-3 0x2222334455669900112233445566990011223344556699001122334455669900 )
 
 (define-constant err-error-expected (err u99001))
 (define-constant err-pool-cycle (err u6018))
+(define-constant err-already-pre-signer-or-signer (err u6003))
 
-;; @name user can pre-register, register and vote
+;; @name user can pre-register, register, vote & re-register
 ;; user stacks 10m STX
 ;; @caller wallet_1
-(define-public (test-signer-pre-register-register-vote)
+(define-public (test-signer-pre-register-register-vote-re-register)
 	(begin
         ;; @continue
         (unwrap! (contract-call? .pox-3 mock-set-stx-account 'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5 {locked: u10000000000000, unlock-height: u4200, unlocked: u10000000000000}) (err u111))
@@ -36,6 +38,30 @@
         (ok true))
 )
 
+;; @name user can pre-register, register, & *not* register twice
+;; user stacks 10m STX
+;; @caller wallet_1
+(define-public (test-signer-pre-register-register-cant-register-twice)
+	(begin
+        ;; @continue
+        (unwrap! (contract-call? .pox-3 mock-set-stx-account 'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5 {locked: u10000000000000, unlock-height: u4200, unlocked: u10000000000000}) (err u111))
+        ;; @continue
+        (unwrap! (contract-call? .pox-3 allow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool none) (err u112))
+        ;; @continue
+        (unwrap! (contract-call? .sbtc-stacking-pool allow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool_flow_test none) (err u113))
+        ;; @continue
+        (try! (check-pox-info))
+        ;; @mine-blocks-before 5
+		(try! (check-sign-pre-register))
+        ;; @mine-blocks-before 2100
+		(try! (check-sign-register))
+        ;; @mine-blocks-before 1
+		(try! (check-sign-register-fail))
+        (ok true))
+)
+
+
+
 (define-public (check-pox-info)
     (let ((pox-info (unwrap-panic (contract-call? .pox-3 get-pox-info))))
         (asserts! (is-eq u2100 (get reward-cycle-length pox-info)) (err u221))
@@ -61,6 +87,14 @@
         ((registration-result
 				(contract-call? .sbtc-stacking-pool signer-register 'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5 u10000000000000 mock-pox-reward-wallet-1 public-key-2)))
 			(asserts! (is-ok registration-result) registration-result)
+			(ok true)))
+
+(define-public (check-sign-register-fail)
+    (let
+        ((registration-result
+				(contract-call? .sbtc-stacking-pool signer-register 'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5 u10000000000000 mock-pox-reward-wallet-1 public-key-3)))
+			(asserts! (is-err registration-result) err-error-expected)
+            (asserts! (is-eq registration-result err-already-pre-signer-or-signer) (err (unwrap-err-panic registration-result)))
 			(ok true)))
 
 
