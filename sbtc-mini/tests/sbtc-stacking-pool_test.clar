@@ -16,6 +16,7 @@
 
 (define-constant err-unauthorised (err u1000))
 (define-constant err-not-protocol-caller (err u6035))
+(define-constant err-stacking-permission-denied (err u6042))
 
 ;; @name Is protocol caller test (is not at first)
 (define-public (test-is-protocol-caller)
@@ -95,7 +96,7 @@
 		(asserts! (is-eq start-voting-window u3700) (err start-voting-window))
 		(asserts! (is-eq start-transfer-window u4000) (err start-transfer-window))
 		(asserts! (is-eq next-cycle-burn-height u4200) (err next-cycle-burn-height))
-		(asserts! (is-eq burn-block-height u3701) (err burn-block-height))
+		(asserts! (is-eq burn-block-height u3702) (err burn-block-height))
 		(ok true)
 	)
 )
@@ -116,6 +117,27 @@
 	(let ((result (contract-call? .sbtc-stacking-pool update-minimum-pool-amount-for-activation u100)))
 		(asserts! (is-err result) result)
 		(asserts! (is-eq result err-not-protocol-caller) result)
+		(ok true)
+	)
+)
+
+;; @name user can't set allowance through contracts
+;; @caller wallet_1
+(define-public (test-allow-contract-through-contract)
+	(let ((result (contract-call? .sbtc-stacking-pool allow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool_test none)))
+        (asserts! (is-err result) result)
+		(asserts! (is-eq result err-stacking-permission-denied) result)
+		(ok true)
+	)
+)
+
+
+;; @name user can't disallow through contracts
+;; @caller wallet_1
+(define-public (test-disallow-contract-through-contract)
+	(let ((result (contract-call? .sbtc-stacking-pool disallow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool_test)))
+        (asserts! (is-err result) result)
+		(asserts! (is-eq result err-stacking-permission-denied) result)
 		(ok true)
 	)
 )

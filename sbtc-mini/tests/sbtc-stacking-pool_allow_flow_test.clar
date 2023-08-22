@@ -2,6 +2,8 @@
 (define-constant public-key 0x0011223344556699001122334455669900112233445566990011223344556699 )
 
 ;;; errors ;;;
+(define-constant err-error-expected (err u99001))
+
 (define-constant err-not-signer (err u6000))
 (define-constant err-allowance-not-set (err u6001))
 (define-constant err-allowance-height (err u6002))
@@ -50,68 +52,89 @@
 ;; @caller wallet_1
 (define-public (test-sign-pre-register-with-disallow)
 	(begin
-        ;; @continue
-        (unwrap! (contract-call? .pox-3 mock-set-stx-account 'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5 {locked: u10000000000000, unlock-height: u4200, unlocked: u10000000000000}) (err u111))
-        ;; @continue
-        (unwrap! (contract-call? .pox-3 allow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool none) (err u112))
-        ;; @continue
-        (unwrap! (contract-call? .sbtc-stacking-pool allow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool_allow_flow_test none) (err u113))
-        ;; @continue
-        (unwrap! (contract-call? .sbtc-stacking-pool disallow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool_allow_flow_test) (err u114))
-        ;; @mine-blocks-before 5
+		;; @continue
+		(unwrap! (contract-call? .pox-3 mock-set-stx-account 'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5 {locked: u10000000000000, unlock-height: u4200, unlocked: u10000000000000}) (err u111))
+		;; @continue
+		(unwrap! (contract-call? .pox-3 allow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool none) (err u112))
+		;; @caller wallet_1
+		(unwrap! (contract-call? .sbtc-stacking-pool allow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool_allow_flow_test none) (err u113))
+		;; @continue
+		(unwrap! (contract-call? .sbtc-stacking-pool disallow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool_allow_flow_test) (err u114))
+		;; @mine-blocks-before 5
 		(try! (check-sign-pre-register-disallowed))
-        (ok true)
-    )
+		(ok true)
+	)
 )
 
 ;; @name user can pre-register only when allowance does expire in the future
 ;; @caller wallet_1
 (define-public (test-sign-pre-register-with-expired-allowance-in-future)
 	(begin
-        ;; @continue
-        (unwrap! (contract-call? .pox-3 mock-set-stx-account 'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5 {locked: u10000000000000, unlock-height: u4200, unlocked: u10000000000000}) (err u111))
-        ;; @continue
-        (unwrap! (contract-call? .pox-3 allow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool none) (err u112))
-        ;; @continue
-        (unwrap! (contract-call? .sbtc-stacking-pool allow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool_allow_flow_test (some u7)) (err u113))
-        ;; @mine-blocks-before 5
+		;; @continue
+		(unwrap! (contract-call? .pox-3 mock-set-stx-account 'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5 {locked: u10000000000000, unlock-height: u4200, unlocked: u10000000000000}) (err u111))
+		;; @continue
+		(unwrap! (contract-call? .sbtc-stacking-pool allow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool_allow_flow_test (some u7)) (err u113))
+		;; @mine-blocks-before 5
+		(try! (check-sign-pre-register-disallowed-pox-3))
+		;; @continue
+		(unwrap! (contract-call? .pox-3 allow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool (some u7)) (err u112))
+		;; @mine-blocks-before 1
+		(try! (check-sign-pre-register-disallowed-pox-3-height))
+		;; @continue
+		(unwrap! (contract-call? .pox-3 allow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool (some u12)) (err u112))
+		;; @mine-blocks-before 1
 		(try! (check-sign-pre-register-disallowed))
-        ;; @continue
-        (unwrap! (contract-call? .sbtc-stacking-pool allow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool_allow_flow_test (some u9)) (err u114))
-        ;; @mine-blocks-before 1
+		;; @continue
+		(unwrap! (contract-call? .sbtc-stacking-pool allow-contract-caller 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool_allow_flow_test (some u12)) (err u114))
+		;; @mine-blocks-before 1
 		(try! (check-sign-pre-register-allowed))
-        (ok true)
-    )
+		(ok true)
+	)
 )
 
 (define-public (check-sign-pre-register-allowed)
-    (begin
-        (let ((actual (check-sign-pre-register)))
-            (asserts! (is-ok actual) actual)
-            (ok true))
-    )
+	(begin
+		(let ((actual (check-sign-pre-register)))
+			(asserts! (is-ok actual) actual)
+			(ok true))
+	)
+)
+
+
+
+(define-public (check-sign-pre-register-disallowed-pox-3)
+	(begin
+		(let ((actual (check-sign-pre-register))
+				(allowance (contract-call? .sbtc-stacking-pool get-allowance-contract-callers 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool_allow_flow_test)))
+			(asserts! (is-err actual) actual)
+			(asserts! (is-eq actual err-allowance-not-set) actual)
+			(ok true))
+	)
+)
+
+(define-public (check-sign-pre-register-disallowed-pox-3-height)
+	(begin
+		(let ((actual (check-sign-pre-register))
+				(allowance (contract-call? .sbtc-stacking-pool get-allowance-contract-callers 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool_allow_flow_test)))
+			(asserts! (is-err actual) actual)
+			(asserts! (is-eq actual err-allowance-height) actual)
+			(ok true))
+	)
 )
 
 (define-public (check-sign-pre-register-disallowed)
-    (begin
-        (let ((actual (check-sign-pre-register))
-                (allowance (contract-call? .sbtc-stacking-pool get-allowance-contract-callers 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool_allow_flow_test)))
-            (asserts! (is-err actual) actual)
-            (asserts! (is-eq actual err-stacking-permission-denied) actual)
-            (ok true))
-    )
+	(begin
+		(let ((actual (check-sign-pre-register))
+				(allowance (contract-call? .sbtc-stacking-pool get-allowance-contract-callers 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool_allow_flow_test)))
+			(asserts! (is-err actual) actual)
+			(asserts! (is-eq actual err-stacking-permission-denied) actual)
+			(ok true))
+	)
 )
 
 (define-public (check-sign-pre-register)
-    (let
-        ((registration-result
+	(let
+		((registration-result
 				(contract-call? .sbtc-stacking-pool signer-pre-register u10000000000000 mock-pox-reward-wallet-1)))
-			(asserts! (is-ok registration-result) registration-result)
-			(ok true)))
-
-(define-public (check-sign-register)
-    (let
-        ((registration-result
-				(contract-call? .sbtc-stacking-pool signer-register 'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5 u10000000000000 mock-pox-reward-wallet-1 public-key)))
 			(asserts! (is-ok registration-result) registration-result)
 			(ok true)))

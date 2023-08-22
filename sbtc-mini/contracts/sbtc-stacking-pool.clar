@@ -82,9 +82,8 @@
 (define-constant err-vote-or (err u6040))
 (define-constant err-candidates-overflow (err u6041))
 (define-constant err-stacking-permission-denied (err u6042))
-(define-constant err-not-enough-locked-stx (err u6043))
-(define-constant err-already-activated (err u6044))
-(define-constant err-not-pre-signed-or-current-signer (err u6045))
+(define-constant err-already-activated (err u6043))
+(define-constant err-not-pre-signed-or-current-signer (err u6044))
 
 ;;; variables ;;;
 
@@ -239,7 +238,7 @@
 
 (define-read-only (is-active-in-cycle (cycle uint))
 	(let ((pool-details (unwrap! (map-get? stacking-details-by-cycle cycle) err-pool-cycle)))
-		(asserts! (was-enough-stx-stacked (get stacked pool-details)) err-not-enough-locked-stx)
+		(asserts! (was-enough-stx-stacked (get stacked pool-details)) err-not-enough-stacked)
 		(ok true)))
 
 ;;;;;;; Disbursement Functions ;;;;;;;
