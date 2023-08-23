@@ -144,6 +144,11 @@ path = 'tests/sbtc-btc-tx-helper_test.clar'
 clarity_version = 2
 epoch = 2.4
 
+[contracts.sbtc-hand-off_test]
+path = 'tests/sbtc-hand-off_test.clar'
+clarity_version = 2
+epoch = 2.4
+
 [repl.analysis.check_checker]
 strict = false
 trusted_sender = false
