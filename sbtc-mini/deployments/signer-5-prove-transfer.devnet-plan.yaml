@@ -9,11 +9,19 @@ plan:
     - id: 0
       transactions:
         - contract-call:
-            contract-id: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-stacking-pool
+            contract-id: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-peg-transfer
             expected-sender: ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5
-            method: vote-for-threshold-wallet-candidate
+            method: relay-handoff-fulfillment
             parameters:
-              # tap root address of sbtc wallet based on wallet_3
-              - "{version: 0x06, hashbytes: 0xc4b5eacb71a27be633ed970dcbc41c00440364bc04ba38ae4683ac24e708bf33}"
+              - u2101
+              - 0x
+              - 0x
+              - u1
+              - u1
+              - "(list)"
+              - 0x
+              - 0x
+              - 0x
+              - "(list)"
             cost: 10000
       epoch: "2.4"

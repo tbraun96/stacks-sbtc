@@ -165,7 +165,7 @@
 ;;;;; Read-Only Functions ;;;;;
 
 ;; use MOCK function
-(define-read-only (get-stx-account (user principal))
+(define-private (get-stx-account (user principal))
 	(contract-call? .pox-3 get-stx-account user))
 
 ;; Check if caller is a protocol caller

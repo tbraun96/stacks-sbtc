@@ -15,7 +15,9 @@ plan:
             parameters:
               - "'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5"
               - u90000000000000
-              - "{version: 0x00, hashbytes: 0x6d78de7b0625dfbfc16c3a8a5735f6dc3dc3f2ce}"
-              - 0x6d78de7b0625dfbfc16c3a8a5735f6dc3dc3f2ce
+              # btc address wallet_2 as user's reward address
+              - "{version: 0x00, hashbytes: 0x99e2ec69ac5b6e67b4e26edd0e2c1c1a6b9bbd23}"
+              # public key of wallet_3 as part of signer key
+              - 0xc4b5eacb71a27be633ed970dcbc41c00440364bc04ba38ae4683ac24e708bf33
             cost: 10000
       epoch: "2.4"
