@@ -1,5 +1,5 @@
 (define-constant mock-pox-reward-wallet-1 { version: 0x06, hashbytes: 0x0011223344556699001122334455669900112233445566990011223344556699 })
-(define-constant mock-peg-wallet-1 { version: 0x06, hashbytes: 0x1122334455669900112233445566990011223344556699001122334455669900 })
+(define-constant mock-sbtc-wallet-1 { version: 0x06, hashbytes: 0x1122334455669900112233445566990011223344556699001122334455669900 })
 (define-constant public-key 0x0011223344556699001122334455669900112233445566990011223344556699 )
 (define-constant public-key-2 0x1122334455669900112233445566990011223344556699001122334455669900 )
 
@@ -48,7 +48,7 @@
 (define-public (check-vote-inactive)
 	(let
 		((vote-result
-				(contract-call? .sbtc-stacking-pool vote-for-threshold-wallet-candidate mock-peg-wallet-1)))
+				(contract-call? .sbtc-stacking-pool vote-for-threshold-wallet-candidate mock-sbtc-wallet-1)))
 			(asserts! (is-err vote-result) err-ok-expected)
 			(asserts! (is-eq vote-result err-not-enough-stacked) (err (unwrap-err-panic vote-result)))
 			(ok true)))

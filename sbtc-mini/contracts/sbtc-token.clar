@@ -130,6 +130,10 @@
 	(ok (+ (ft-get-balance sbtc-token who) (ft-get-balance sbtc-token-locked who)))
 )
 
+(define-read-only (get-balance-available (who principal))
+	(ok (ft-get-balance sbtc-token who))
+)
+
 (define-read-only (get-balance-locked (who principal))
 	(ok (ft-get-balance sbtc-token-locked who))
 )

@@ -13,12 +13,12 @@
 (define-constant withdrawal-state-reclaimed 0x02)
 
 (define-constant err-burn-tx-already-processed (err u2000))
-(define-constant err-sbtc-wallet-already-set (err u2002))
-(define-constant err-minimum-burnchain-confirmations-not-reached (err u2003))
-(define-constant err-not-settled-state (err u2004))
-(define-constant err-invalid-txid-length (err u2005))
-(define-constant err-unknown-withdrawal-request (err u2006))
-(define-constant err-withdrawal-not-pending (err u2007))
+(define-constant err-sbtc-wallet-already-set (err u2001))
+(define-constant err-minimum-burnchain-confirmations-not-reached (err u2002))
+(define-constant err-not-settled-state (err u2003))
+(define-constant err-invalid-txid-length (err u2004))
+(define-constant err-unknown-withdrawal-request (err u2005))
+(define-constant err-withdrawal-not-pending (err u2006))
 
 (define-private (assert-eq (result (response bool uint)) (compare (response bool uint)) (message (string-ascii 100)))
 	(ok (asserts! (is-eq result compare) (err message)))

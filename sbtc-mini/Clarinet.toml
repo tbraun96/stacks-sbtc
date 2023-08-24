@@ -35,18 +35,13 @@ path = 'tests/sbtc-controller_test.clar'
 clarity_version = 2
 epoch = 2.4
 
-[contracts.sbtc-deposit-processor]
-path = 'contracts/sbtc-deposit-processor.clar'
+[contracts.sbtc-deposit-verifier]
+path = 'contracts/sbtc-deposit-verifier.clar'
 clarity_version = 2
 epoch = 2.4
 
-[contracts.sbtc-deposit-processor_test]
-path = 'tests/sbtc-deposit-processor_test.clar'
-clarity_version = 2
-epoch = 2.4
-
-[contracts.sbtc-withdrawal-processor]
-path = 'contracts/sbtc-withdrawal-processor.clar'
+[contracts.sbtc-deposit-verifier_test]
+path = 'tests/sbtc-deposit-verifier_test.clar'
 clarity_version = 2
 epoch = 2.4
 
@@ -57,6 +52,36 @@ epoch = 2.4
 
 [contracts.sbtc-registry_test]
 path = 'tests/sbtc-registry_test.clar'
+clarity_version = 2
+epoch = 2.4
+
+[contracts.sbtc-withdrawal-request-stx_test]
+path = 'tests/sbtc-withdrawal-request-stx_test.clar'
+clarity_version = 2
+epoch = 2.4
+
+[contracts.sbtc-withdrawal-verifier_test]
+path = 'tests/sbtc-withdrawal-verifier_test.clar'
+clarity_version = 2
+epoch = 2.4
+
+[contracts.sbtc-withdrawal-verifier]
+path = 'contracts/sbtc-withdrawal-verifier.clar'
+clarity_version = 2
+epoch = 2.4
+
+[contracts.sbtc-withdrawal-request-btc]
+path = 'contracts/sbtc-withdrawal-request-btc.clar'
+clarity_version = 2
+epoch = 2.4
+
+[contracts.sbtc-withdrawal-request-stx]
+path = 'contracts/sbtc-withdrawal-request-stx.clar'
+clarity_version = 2
+epoch = 2.4
+
+[contracts.sbtc-withdrawal-request-reclaim]
+path = 'contracts/sbtc-withdrawal-request-reclaim.clar'
 clarity_version = 2
 epoch = 2.4
 

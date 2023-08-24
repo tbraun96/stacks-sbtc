@@ -1,5 +1,5 @@
 ;; sbtc-mini-hand-off
-;; Hand-off processor for handing-off pegged-BTC from threshold-wallet (n) to newly-voted-for threshold-wallet (n+1)
+;; Hand-off verifier for handing-off pegged-BTC from threshold-wallet (n) to newly-voted-for threshold-wallet (n+1)
 
 ;; Hand-off Commit/Fund -> On BTC
 ;; 1. Stackers/signers in cycle/pool N create & fund a Taproot address/script with the current peg-balance that allows for two things:

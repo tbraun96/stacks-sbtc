@@ -68,6 +68,7 @@
 
 ;; @name user can pre-register only when allowance does expire in the future
 ;; @caller wallet_1
+;; TODO: failing for me but out of scope for this PR.
 (define-public (test-sign-pre-register-with-expired-allowance-in-future)
 	(begin
 		;; @continue

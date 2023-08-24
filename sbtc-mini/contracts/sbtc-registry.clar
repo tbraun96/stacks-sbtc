@@ -11,12 +11,12 @@
 (define-constant penalty-hand-off-failed 0x02)
 
 (define-constant err-burn-tx-already-processed (err u2000)) ;; A burnchain TXID was processed (seen) before.
-(define-constant err-sbtc-wallet-already-set (err u2002)) ;; A peg wallet address for the specified cycle was already set.
-(define-constant err-minimum-burnchain-confirmations-not-reached (err u2003)) ;; The burnchain transaction did not yet reach the minimum amount of confirmation.
-(define-constant err-not-settled-state (err u2004)) ;; The state passed to function `get-and-settle-pending-withdrawal-request` was not a settled state. (Fulfilled or cancelled.)
-(define-constant err-invalid-txid-length (err u2005)) ;; The passed TXID byte length was not equal to 32.
-(define-constant err-unknown-withdrawal-request (err u2006)) ;; The withdrawal request ID passed to `get-and-settle-pending-withdrawal-request` does not exist.
-(define-constant err-withdrawal-not-pending (err u2007)) ;; The withdrawal request ID passed to `get-and-settle-pending-withdrawal-request` is not in a pending state.
+(define-constant err-sbtc-wallet-already-set (err u2001)) ;; A peg wallet address for the specified cycle was already set.
+(define-constant err-minimum-burnchain-confirmations-not-reached (err u2002)) ;; The burnchain transaction did not yet reach the minimum amount of confirmation.
+(define-constant err-not-settled-state (err u2003)) ;; The state passed to function `get-and-settle-pending-withdrawal-request` was not a settled state. (Fulfilled or cancelled.)
+(define-constant err-invalid-txid-length (err u2004)) ;; The passed TXID byte length was not equal to 32.
+(define-constant err-unknown-withdrawal-request (err u2005)) ;; The withdrawal request ID passed to `get-and-settle-pending-withdrawal-request` does not exist.
+(define-constant err-withdrawal-not-pending (err u2006)) ;; The withdrawal request ID passed to `get-and-settle-pending-withdrawal-request` is not in a pending state.
 
 (define-data-var burnchain-confirmations-required uint u4)
 (define-map processed-burn-wtxids (buff 32) bool)
@@ -33,7 +33,7 @@
 	value: uint,
 	sender: principal,
 	destination: { version: (buff 1), hashbytes: (buff 32) },
-	unlock-script: (buff 128),
+	extra-data: (buff 128),
 	burn-height: uint,
 	expiry-burn-height: uint
 	})
@@ -50,6 +50,18 @@
 
 (define-read-only (is-burn-wtx-processed (txid (buff 32)))
 	(map-get? processed-burn-wtxids txid)
+)
+
+(define-read-only (get-burnchain-confirmations-required)
+	(ok (var-get burnchain-confirmations-required))
+)
+
+;; #[allow(unchecked_data)]
+(define-public (set-burnchain-confirmations-required (minimum-confirmations uint))
+	(begin
+		(try! (is-protocol-caller))
+		(ok (var-set burnchain-confirmations-required (if (> minimum-confirmations u0) minimum-confirmations u1)))
+	)
 )
 
 (define-public (assert-new-burn-wtxid-and-height (txid (buff 32)) (burn-height uint))
@@ -117,11 +129,11 @@
 	(sender principal)
 	(expiry-burn-height uint)
 	(destination { version: (buff 1), hashbytes: (buff 32) })
-	(unlock-script (buff 128))
+	(extra-data (buff 128))
 	)
 	(let ((nonce (var-get withdrawal-request-nonce)))
 		(try! (is-protocol-caller))
-		(map-set withdrawal-requests nonce {value: value, sender: sender, destination: destination, unlock-script: unlock-script, burn-height: burn-block-height, expiry-burn-height: expiry-burn-height })
+		(map-set withdrawal-requests nonce {value: value, sender: sender, destination: destination, extra-data: extra-data, burn-height: burn-block-height, expiry-burn-height: expiry-burn-height })
 		(var-set withdrawal-request-nonce (+ nonce u1))
 		(var-set withdrawal-requests-pending (+ (var-get withdrawal-requests-pending) u1))
 		(ok nonce)

@@ -1,5 +1,5 @@
 (define-constant err-burn-tx-already-processed (err u2000))
-(define-constant err-minimum-burnchain-confirmations-not-reached (err u2003))
+(define-constant err-minimum-burnchain-confirmations-not-reached (err u2002))
 
 (define-constant err-deposit-expired (err u4000))
 (define-constant err-not-a-sbtc-wallet (err u4001))
@@ -52,6 +52,10 @@
 (define-constant mock-wtxid-1 0x13d6ccd90dc236915d16dabe29fc02c00d4f5aad35577b43358a233d6e4620fd)
 (define-constant mock-txid-1 0xcd2662154e6d76b2b2b92e70c0cac3ccf534f9b74eb5b89819ec509083d00a50)
 
+;;0x582b1900f55dad47d575138e91321c441d174e20a43336780c352a0b556ecc8b
+;;  "txid": "0168ee41db8a4766efe02bba1ebc0de320bc1b0abb7304f5f104818a9dd721cf",
+;;  "hash": "13d6ccd90dc236915d16dabe29fc02c00d4f5aad35577b43358a233d6e4620fd",
+
 (define-constant mock-witness-index-1 u0)
 
 (define-constant mock-wtxid-1-le 0xfd20466e3d238a35437b5735ad5a4f0dc002fc29beda165d9136c20dd9ccd613)
@@ -99,7 +103,7 @@
 				recipient: 'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5
 				}
 			)
-			(result (unwrap! (contract-call? .sbtc-deposit-processor verify-extract-unlock-script script) (err {expected: none, actual: none, msg: "Verification or extraction failed"})))
+			(result (unwrap! (contract-call? .sbtc-deposit-verifier verify-extract-unlock-script script) (err {expected: none, actual: none, msg: "Verification or extraction failed"})))
 		)
 		(asserts! (is-eq result expected) (err {expected: (some expected), actual: (some result), msg: "Result mismatch"}))
 		(ok true)
@@ -111,7 +115,7 @@
 			;; FF in place of sbtc opcode
 			(script 0x18ff001a7321b74e2b6a7e949e6c4ad313035b16650950170075200046422d30ec92c568e21be4b9579cfed8e71ba0702122b014755ae0e23e3563ac)
 			(expected err-script-invalid-opcode)
-			(result (contract-call? .sbtc-deposit-processor verify-extract-unlock-script script))
+			(result (contract-call? .sbtc-deposit-verifier verify-extract-unlock-script script))
 		)
 		(asserts! (is-eq result expected) (err {expected: (some expected), actual: (some result), msg: "Result mismatch"}))
 		(ok true)
@@ -123,7 +127,7 @@
 			;; FF in place of payload version
 			(script 0x183cff1a7321b74e2b6a7e949e6c4ad313035b16650950170075200046422d30ec92c568e21be4b9579cfed8e71ba0702122b014755ae0e23e3563ac)
 			(expected err-script-invalid-version)
-			(result (contract-call? .sbtc-deposit-processor verify-extract-unlock-script script))
+			(result (contract-call? .sbtc-deposit-verifier verify-extract-unlock-script script))
 		)
 		(asserts! (is-eq result expected) (err {expected: (some expected), actual: (some result), msg: "Result mismatch"}))
 		(ok true)
@@ -135,7 +139,7 @@
 			;; FF in place of OP_DROP
 			(script 0x183c001a7321b74e2b6a7e949e6c4ad313035b166509501700ff200046422d30ec92c568e21be4b9579cfed8e71ba0702122b014755ae0e23e3563ac)
 			(expected err-script-not-op-drop)
-			(result (contract-call? .sbtc-deposit-processor verify-extract-unlock-script script))
+			(result (contract-call? .sbtc-deposit-verifier verify-extract-unlock-script script))
 		)
 		(asserts! (is-eq result expected) (err {expected: (some expected), actual: (some result), msg: "Result mismatch"}))
 		(ok true)
@@ -147,7 +151,7 @@
 			;; removed OP_CHECKSIG at the end (0xac)
 			(script 0x183c001a7321b74e2b6a7e949e6c4ad313035b16650950170075200046422d30ec92c568e21be4b9579cfed8e71ba0702122b014755ae0e23e3563)
 			(expected err-script-checksig-missing)
-			(result (contract-call? .sbtc-deposit-processor verify-extract-unlock-script script))
+			(result (contract-call? .sbtc-deposit-verifier verify-extract-unlock-script script))
 		)
 		(asserts! (is-eq result expected) (err {expected: (some expected), actual: (some result), msg: "Result mismatch"}))
 		(ok true)
@@ -159,7 +163,7 @@
 			;; Invalid contract name (0xff)
 			(script 0x193c001a7321b74e2b6a7e949e6c4ad313035b166509501701ff75200046422d30ec92c568e21be4b9579cfed8e71ba0702122b014755ae0e23e3563ac)
 			(expected err-script-invalid-principal)
-			(result (contract-call? .sbtc-deposit-processor verify-extract-unlock-script script))
+			(result (contract-call? .sbtc-deposit-verifier verify-extract-unlock-script script))
 		)
 		(asserts! (is-eq result expected) (err {expected: (some expected), actual: (some result), msg: "Result mismatch"}))
 		(ok true)
@@ -170,8 +174,8 @@
 ;; @mine-blocks-before 5
 (define-public (test-deposit-reveal)
 	(let (
-    (result
-      (contract-call? .sbtc-deposit-processor complete-deposit
+	(result
+	  (contract-call? .sbtc-deposit-verifier complete-deposit
 			mock-peg-cycle
 			mock-burnchain-height ;; burn-height
 			mock-tx-1 ;; tx
@@ -185,8 +189,8 @@
 			mock-coinbase-tx-1 ;; ctx
 			(list mock-txid-1) ;; cproof
 			)
-      )
-    )
+	  )
+	)
 		(unwrap! result (err {msg: "Expected ok, got err", actual: (some result)}))
 		(asserts! (is-eq (get-sbtc-balance wallet-1) mock-value-tx-1) (err {msg: "User did not receive the expected sBTC", actual: none}))
 		(ok true)
@@ -196,7 +200,7 @@
 ;; @name Cannot submit the same proof twice
 ;; @mine-blocks-before 5
 (define-public (test-deposit-reveal-no-repeat)
-	(let ((result (contract-call? .sbtc-deposit-processor complete-deposit
+	(let ((result (contract-call? .sbtc-deposit-verifier complete-deposit
 			mock-peg-cycle
 			mock-burnchain-height ;; burn-height
 			mock-tx-1 ;; tx
@@ -210,7 +214,7 @@
 			mock-coinbase-tx-1 ;; ctx
 			(list mock-txid-1) ;; cproof
 			))
-		(result2 (contract-call? .sbtc-deposit-processor complete-deposit
+		(result2 (contract-call? .sbtc-deposit-verifier complete-deposit
 			mock-peg-cycle
 			mock-burnchain-height ;; burn-height
 			mock-tx-1 ;; tx
@@ -224,7 +228,7 @@
 			mock-coinbase-tx-1 ;; ctx
 			(list mock-txid-1) ;; cproof
 			))
-      )
+	  )
 		(unwrap! result (err {msg: "Expected ok, got err", actual: (some result)}))
 		(asserts! (is-eq (get-sbtc-balance wallet-1) mock-value-tx-1) (err {msg: "User did not receive the expected sBTC", actual: none}))
 		(asserts! (is-eq result2 err-burn-tx-already-processed) (err {msg: "Second call should have failed with err-burn-tx-already-processed", actual: (some result2)}))
@@ -234,21 +238,21 @@
 
 ;; @name cannot complete deposit if minimum burnchain confirmations not reached
 (define-public (test-minimum-burnchain-confirmations-not-reached)
-  (let ((result (contract-call? .sbtc-deposit-processor complete-deposit
-                     mock-peg-cycle
-                     mock-burnchain-height
-                     mock-tx-1
-                     mock-block-header-1
-                     u1
-                     u1
-                     (list mock-coinbase-wtxid-1)
-                     mock-witness-root-hash-1-le
-                     mock-coinbase-witness-reserved-data
-                     mock-witness-index-1
-                     (concat mock-coinbase-tx-1 0x)
-                     (list mock-txid-1)
-                     )))
-    (asserts! (is-eq result err-minimum-burnchain-confirmations-not-reached) (err {msg: "Expected err-minimum-burnchain-confirmations-not-reached, got", actual: (some result)}))
-    (ok true)
-  )
+  (let ((result (contract-call? .sbtc-deposit-verifier complete-deposit
+		mock-peg-cycle
+		mock-burnchain-height
+		mock-tx-1
+		mock-block-header-1
+		u1
+		u1
+		(list mock-coinbase-wtxid-1)
+		mock-witness-root-hash-1-le
+		mock-coinbase-witness-reserved-data
+		mock-witness-index-1
+		mock-coinbase-tx-1
+		(list mock-txid-1)
+		)))
+	(asserts! (is-eq result err-minimum-burnchain-confirmations-not-reached) (err {msg: "Expected err-minimum-burnchain-confirmations-not-reached, got", actual: (some result)}))
+	(ok true)
+	)
 )

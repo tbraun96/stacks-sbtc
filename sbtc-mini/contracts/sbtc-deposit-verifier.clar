@@ -1,8 +1,8 @@
-(define-constant err-not-a-sbtc-wallet (err u4001)) ;; There is no peg wallet address for the specified wallet.
-(define-constant err-invalid-spending-pubkey (err u4003)) ;; The recipient of the BTC is not the same as the pubkey that unlocked the spending script.
-(define-constant err-peg-value-not-found (err u4005)) ;; There was no output containing the peg wallet scriptPubKey.
-(define-constant err-missing-witness (err u4006)) ;; The Taproot witness was missing.
-(define-constant err-unlock-script-not-found-or-invalid (err u4007)) ;; The unlock script at the specified witness index did not exist or was invalid. (Not according to the sBTC spec.)
+(define-constant err-not-a-sbtc-wallet (err u4000)) ;; There is no peg wallet address for the specified wallet.
+(define-constant err-invalid-spending-pubkey (err u4001)) ;; The recipient of the BTC is not the same as the pubkey that unlocked the spending script.
+(define-constant err-peg-value-not-found (err u4002)) ;; There was no output containing the peg wallet scriptPubKey.
+(define-constant err-missing-witness (err u4003)) ;; The Taproot witness was missing.
+(define-constant err-unlock-script-not-found-or-invalid (err u4004)) ;; The unlock script at the specified witness index did not exist or was invalid. (Not according to the sBTC spec.)
 
 (define-constant err-script-invalid-opcode (err u4010)) ;; The opcode in the unlock script was invalid.
 (define-constant err-script-invalid-version (err u4011)) ;; The version in the unlock script was invalid.

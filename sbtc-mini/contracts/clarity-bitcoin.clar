@@ -555,7 +555,8 @@
     ;; verify that the coinbase tx is correct
     (try! (was-tx-mined-compact burn-height ctx header { tx-index: u0, hashes: cproof, tree-depth: tree-depth }))
     (let (
-      (witness-out (get-commitment-scriptPubKey (get outs (try! (parse-tx ctx)))))
+      (witness-out (get-commitment-scriptPubKey (if (and (is-eq (element-at? ctx u4) (some 0x00)) (is-eq (element-at? ctx u5) (some 0x01))) (get outs (try! (parse-wtx ctx))) (get outs (try! (parse-tx ctx))
+      ))))
       (final-hash (sha256 (sha256 (concat witness-merkle-root witness-reserved-value))))
       (reversed-wtxid (get-reversed-txid tx))
       (wtxid (reverse-buff32 reversed-wtxid))

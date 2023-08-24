@@ -2,8 +2,8 @@ import { Tx, Chain, Account, types } from 'https://deno.land/x/clarinet@v1.7.0/i
 
 export const bootstrapContracts = [
 	'.sbtc-token',
-	'.sbtc-deposit-processor',
-	'.sbtc-withdrawal-processor',
+	'.sbtc-deposit-verifier',
+	'.sbtc-withdrawal-verifier',
 	'.sbtc-registry',
 	'.sbtc-stacking-pool',
 	'.sbtc-testnet-debug-controller',
