@@ -6,7 +6,8 @@ use stacks_signer::signer::Signer;
 use tracing::info;
 use wsts::Point;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
 
     // Initialize logging
@@ -20,7 +21,7 @@ fn main() {
                 Ok(config) => {
                     let mut signer = Signer::new(config, id);
                     info!("{} signer id #{}", stacks_signer::version(), id); // sign-on message
-                    if let Err(e) = signer.start_p2p_sync() {
+                    if let Err(e) = signer.start_p2p_async().await {
                         panic!("An error occurred on the P2P Network: {}", e);
                     }
                 }

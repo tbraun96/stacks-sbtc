@@ -5,7 +5,8 @@ use frost_signer::config::{Cli, Config};
 use frost_signer::logging;
 use frost_signer::signer::Signer;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     logging::initiate_tracing_subscriber();
 
     let cli = Cli::parse();
@@ -20,7 +21,7 @@ fn main() {
             ); // sign-on message
 
             //Start listening for p2p messages
-            if let Err(e) = signer.start_p2p_sync() {
+            if let Err(e) = signer.start_p2p_async().await {
                 warn!("An error occurred in the P2P Network: {}", e);
             }
         }

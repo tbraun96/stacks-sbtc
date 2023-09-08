@@ -14,7 +14,7 @@ impl Signer {
         }
     }
 
-    pub fn start_p2p_sync(&mut self) -> Result<(), SignerError> {
-        self.frost_signer.start_p2p_sync()
+    pub async fn start_p2p_async(&mut self) -> Result<(), SignerError> {
+        self.frost_signer.start_p2p_async().await
     }
 }

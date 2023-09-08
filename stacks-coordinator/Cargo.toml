@@ -14,7 +14,8 @@ blockstack-core = { workspace = true }
 clap = { workspace = true }
 frost-coordinator = { path = "../frost-coordinator" }
 frost-signer = { path = "../frost-signer" }
-rusqlite = { workspace = true }
+rusqlite.workspace = true
+tokio-rusqlite = "0.4.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
 stacks-signer = { path = "../stacks-signer" }
@@ -24,12 +25,13 @@ thiserror = { workspace = true }
 toml = { workspace = true }
 wsts = { workspace = true }
 bitcoin.workspace = true
-reqwest = { version = "0.11.14", features = ["blocking", "json"] }
+reqwest = { version = "0.11.14", features = ["json"] }
 backoff = { workspace = true }
-ureq.workspace = true
 url = { workspace = true }
+async-trait = { workspace = true }
 bdk.workspace = true
 hex.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 mockall = { workspace = true }

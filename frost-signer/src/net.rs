@@ -1,5 +1,8 @@
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::{fmt::Debug, time::Duration};
+use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
 use crate::signing_round;
@@ -11,15 +14,28 @@ pub struct Message {
 }
 
 // Http listen/poll with queue (requires mutable access, is configured by passing in HttpNet)
-#[derive(Clone)]
 pub struct HttpNetListen {
-    pub net: HttpNet,
-    in_queue: Vec<Message>,
+    pub net: Arc<Mutex<HttpNet>>,
+    in_queue: Mutex<Vec<Message>>,
+}
+
+impl Clone for HttpNetListen {
+    fn clone(&self) -> Self {
+        Self {
+            net: self.net.clone(),
+            // Clone is only used for testing, so we can just create a new empty queue for each
+            // new instance
+            in_queue: Mutex::new(Vec::new()),
+        }
+    }
 }
 
 impl HttpNetListen {
     pub fn new(net: HttpNet, in_queue: Vec<Message>) -> Self {
-        HttpNetListen { net, in_queue }
+        HttpNetListen {
+            net: Arc::new(Mutex::new(net)),
+            in_queue: Mutex::new(in_queue),
+        }
     }
 }
 
@@ -40,67 +56,73 @@ impl HttpNet {
 }
 
 // these functions manipulate the inbound message queue
+#[async_trait]
 pub trait NetListen {
     type Error: Debug;
+    type Arg: Clone;
 
-    fn listen(&self);
-    fn poll(&mut self, id: u32);
-    fn next_message(&mut self) -> Option<Message>;
-    fn send_message(&self, msg: Message) -> Result<(), Self::Error>;
+    async fn poll(&self, arg: Self::Arg);
+    async fn next_message(&self) -> Option<Message>;
+    async fn send_message(&self, msg: Message) -> Result<(), Self::Error>;
 }
 
+#[async_trait]
 impl NetListen for HttpNetListen {
     type Error = Error;
+    type Arg = u32;
 
-    fn listen(&self) {}
-
-    fn poll(&mut self, id: u32) {
-        let url = url_with_id(&self.net.http_relay_url, id);
+    async fn poll(&self, id: u32) {
+        let url = url_with_id(&self.net.lock().await.http_relay_url, id);
         debug!("poll {}", url);
-        match ureq::get(&url).call() {
+        match reqwest::get(&url).await {
             Ok(response) => {
-                self.net.connected = true;
+                self.net.lock().await.connected = true;
                 if response.status() == 200 {
-                    match bincode::deserialize_from::<_, Message>(response.into_reader()) {
-                        Ok(msg) => {
-                            debug!("received {:?}", msg);
-                            self.in_queue.push(msg);
-                        }
-                        Err(_e) => {}
-                    };
+                    if let Ok(msg) = response.bytes().await {
+                        match bincode::deserialize_from::<_, Message>(msg.as_ref()) {
+                            Ok(msg) => {
+                                debug!("received {:?}", msg);
+                                self.in_queue.lock().await.push(msg);
+                            }
+                            Err(_e) => {}
+                        };
+                    }
                 };
             }
             Err(e) => {
-                if self.net.connected {
+                let mut lock = self.net.lock().await;
+                if lock.connected {
                     warn!("{} U: {}", e, url);
-                    self.net.connected = false;
+                    lock.connected = false;
                 }
             }
-        };
+        }
     }
-    fn next_message(&mut self) -> Option<Message> {
-        self.in_queue.pop()
+    async fn next_message(&self) -> Option<Message> {
+        self.in_queue.lock().await.pop()
     }
 
     // pass-thru to immutable net function
-    fn send_message(&self, msg: Message) -> Result<(), Self::Error> {
-        self.net.send_message(msg)
+    async fn send_message(&self, msg: Message) -> Result<(), Self::Error> {
+        self.net.lock().await.send_message(msg).await
     }
 }
 
 // for threads that only send data, use immutable Net
+#[async_trait]
 pub trait Net {
     type Error: Debug;
 
-    fn send_message(&self, msg: Message) -> Result<(), Self::Error>;
+    async fn send_message(&self, msg: Message) -> Result<(), Self::Error>;
 }
 
+#[async_trait]
 impl Net for HttpNet {
     type Error = Error;
 
-    fn send_message(&self, msg: Message) -> Result<(), Self::Error> {
+    async fn send_message(&self, msg: Message) -> Result<(), Self::Error> {
         // sign message
-        let bytes = bincode::serialize(&msg)?;
+        let bytes = &bincode::serialize(&msg)?;
 
         let notify = |_err, dur| {
             debug!(
@@ -109,9 +131,13 @@ impl Net for HttpNet {
             );
         };
 
-        let send_request = || {
-            ureq::post(&self.http_relay_url)
-                .send_bytes(&bytes[..])
+        let send_request = || async move {
+            reqwest::Client::default()
+                .post(&self.http_relay_url)
+                .body(bytes.clone())
+                .header("Content-Length", bytes.len())
+                .send()
+                .await
                 .map_err(backoff::Error::transient)
         };
         let backoff_timer = backoff::ExponentialBackoffBuilder::new()
@@ -119,7 +145,8 @@ impl Net for HttpNet {
             .with_max_interval(Duration::from_millis(128))
             .build();
 
-        let response = backoff::retry_notify(backoff_timer, send_request, notify)
+        let response = backoff::future::retry_notify(backoff_timer, send_request, notify)
+            .await
             .map_err(|_| Error::Timeout)?;
 
         debug!(
@@ -138,7 +165,7 @@ pub enum Error {
     #[error("Serialization failed: {0}")]
     SerializationError(#[from] bincode::Error),
     #[error("{0}")]
-    NetworkError(#[from] Box<ureq::Error>),
+    NetworkError(#[from] Box<reqwest::Error>),
     #[error("Failed to connect to network.")]
     Timeout,
 }

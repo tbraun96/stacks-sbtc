@@ -50,7 +50,7 @@ pub enum Command {
 }
 
 pub struct Coordinator<Network: NetListen> {
-    id: u32, // Used for relay coordination
+    id: Network::Arg, // Used for relay coordination
     current_dkg_id: u64,
     current_dkg_public_id: u64,
     current_sign_id: u64,
@@ -68,7 +68,7 @@ pub struct Coordinator<Network: NetListen> {
 }
 
 impl<Network: NetListen> Coordinator<Network> {
-    pub fn new(id: u32, config: &Config, network: Network) -> Result<Self, Error> {
+    pub fn new(id: Network::Arg, config: &Config, network: Network) -> Result<Self, Error> {
         Ok(Self {
             id,
             current_dkg_id: 0,
@@ -113,20 +113,20 @@ impl<Network: NetListen> Coordinator<Network>
 where
     Error: From<Network::Error>,
 {
-    pub fn run(&mut self, command: &Command) -> Result<(), Error> {
+    pub async fn run(&mut self, command: &Command) -> Result<(), Error> {
         match command {
             Command::Dkg => {
-                self.run_distributed_key_generation()?;
+                self.run_distributed_key_generation().await?;
                 Ok(())
             }
             Command::Sign { msg } => {
-                self.sign_message(msg)?;
+                self.sign_message(msg).await?;
                 Ok(())
             }
             Command::DkgSign { msg } => {
                 info!("sign msg: {:?}", msg);
-                self.run_distributed_key_generation()?;
-                self.sign_message(msg)?;
+                self.run_distributed_key_generation().await?;
+                self.sign_message(msg).await?;
                 Ok(())
             }
             Command::GetAggregatePublicKey => {
@@ -137,17 +137,17 @@ where
         }
     }
 
-    pub fn run_distributed_key_generation(&mut self) -> Result<Point, Error> {
+    pub async fn run_distributed_key_generation(&mut self) -> Result<Point, Error> {
         self.current_dkg_id = self.current_dkg_id.wrapping_add(1);
         info!("Starting DKG round #{}", self.current_dkg_id);
-        self.start_public_shares()?;
-        let public_key = self.wait_for_public_shares()?;
-        self.start_private_shares()?;
-        self.wait_for_dkg_end()?;
+        self.start_public_shares().await?;
+        let public_key = self.wait_for_public_shares().await?;
+        self.start_private_shares().await?;
+        self.wait_for_dkg_end().await?;
         Ok(public_key)
     }
 
-    fn start_public_shares(&mut self) -> Result<(), Error> {
+    async fn start_public_shares(&mut self) -> Result<(), Error> {
         self.dkg_public_shares.clear();
         info!(
             "DKG Round #{}: Starting Public Share Distribution Round #{}",
@@ -161,11 +161,11 @@ where
             sig: dkg_begin.sign(&self.network_private_key).expect(""),
             msg: MessageTypes::DkgBegin(dkg_begin),
         };
-        self.network.send_message(dkg_begin_message)?;
+        self.network.send_message(dkg_begin_message).await?;
         Ok(())
     }
 
-    fn start_private_shares(&mut self) -> Result<(), Error> {
+    async fn start_private_shares(&mut self) -> Result<(), Error> {
         info!(
             "DKG Round #{}: Starting Private Share Distribution",
             self.current_dkg_id
@@ -177,11 +177,11 @@ where
             sig: dkg_begin.sign(&self.network_private_key).expect(""),
             msg: MessageTypes::DkgPrivateBegin(dkg_begin),
         };
-        self.network.send_message(dkg_private_begin_msg)?;
+        self.network.send_message(dkg_private_begin_msg).await?;
         Ok(())
     }
 
-    fn collect_nonces(&mut self) -> Result<(), Error> {
+    async fn collect_nonces(&mut self) -> Result<(), Error> {
         self.public_nonces.clear();
 
         let nonce_request = NonceRequest {
@@ -201,10 +201,10 @@ where
             "dkg_id #{} sign_id #{} sign_nonce_id #{}. NonceRequest sent",
             self.current_dkg_id, self.current_sign_id, self.current_sign_nonce_id
         );
-        self.network.send_message(nonce_request_message)?;
+        self.network.send_message(nonce_request_message).await?;
 
         loop {
-            match self.wait_for_next_message()?.msg {
+            match self.wait_for_next_message().await?.msg {
                 MessageTypes::NonceRequest(_) => {}
                 MessageTypes::NonceResponse(nonce_response) => {
                     let signer_id = nonce_response.signer_id;
@@ -230,9 +230,9 @@ where
     }
 
     #[allow(non_snake_case)]
-    fn compute_aggregate_nonce(&mut self, msg: &[u8]) -> Result<Point, Error> {
+    async fn compute_aggregate_nonce(&mut self, msg: &[u8]) -> Result<Point, Error> {
         info!("Computing aggregate nonce...");
-        self.collect_nonces()?;
+        self.collect_nonces().await?;
         // XXX this needs to be key_ids for v1 and signer_ids for v2
         let party_ids = self
             .public_nonces
@@ -248,7 +248,7 @@ where
         Ok(R)
     }
 
-    fn request_signature_shares(
+    async fn request_signature_shares(
         &self,
         nonce_responses: &[NonceResponse],
         msg: &[u8],
@@ -273,16 +273,18 @@ where
             msg: MessageTypes::SignShareRequest(signature_share_request),
         };
 
-        self.network.send_message(signature_share_request_message)?;
+        self.network
+            .send_message(signature_share_request_message)
+            .await?;
 
         Ok(())
     }
 
-    fn collect_signature_shares(&mut self) -> Result<(), Error> {
+    async fn collect_signature_shares(&mut self) -> Result<(), Error> {
         // get the parties who responded with a nonce
         let mut signers: HashSet<u32> = HashSet::from_iter(self.public_nonces.keys().cloned());
         while !signers.is_empty() {
-            match self.wait_for_next_message()?.msg {
+            match self.wait_for_next_message().await?.msg {
                 MessageTypes::SignShareResponse(response) => {
                     if let Some(_party_id) = signers.take(&response.signer_id) {
                         info!(
@@ -307,7 +309,7 @@ where
     }
 
     #[allow(non_snake_case)]
-    pub fn sign_message(&mut self, msg: &[u8]) -> Result<(Signature, SchnorrProof), Error> {
+    pub async fn sign_message(&mut self, msg: &[u8]) -> Result<(Signature, SchnorrProof), Error> {
         debug!("Attempting to Sign Message");
         if self.aggregate_public_key == Point::default() {
             return Err(Error::NoAggregatePublicKey);
@@ -315,7 +317,7 @@ where
 
         //Continually compute a new aggregate nonce until we have a valid even R
         loop {
-            let R = self.compute_aggregate_nonce(msg)?;
+            let R = self.compute_aggregate_nonce(msg).await?;
             if R.has_even_y() {
                 debug!("Success: R has even y coord: {}", &R);
                 break;
@@ -348,8 +350,8 @@ where
         let nonce_responses: Vec<NonceResponse> = self.public_nonces.values().cloned().collect();
 
         // request signature shares
-        self.request_signature_shares(&nonce_responses, msg)?;
-        self.collect_signature_shares()?;
+        self.request_signature_shares(&nonce_responses, msg).await?;
+        self.collect_signature_shares().await?;
 
         let nonces = nonce_responses
             .iter()
@@ -392,7 +394,7 @@ where
         Ok(self.aggregate_public_key)
     }
 
-    fn wait_for_public_shares(&mut self) -> Result<Point, Error> {
+    async fn wait_for_public_shares(&mut self) -> Result<Point, Error> {
         let mut ids_to_await: HashSet<u32> = (1..=self.total_signers).collect();
 
         info!(
@@ -412,11 +414,11 @@ where
                 } else {
                     warn!("DKG Round #{} Failed: Aggregate public key does not have even y coord, re-running dkg.", self.current_dkg_id);
                     ids_to_await = (1..=self.total_signers).collect();
-                    self.start_public_shares()?;
+                    self.start_public_shares().await?;
                 }
             }
 
-            match self.wait_for_next_message()?.msg {
+            match self.wait_for_next_message().await?.msg {
                 MessageTypes::DkgPublicEnd(dkg_end_msg) => {
                     ids_to_await.remove(&dkg_end_msg.signer_id);
                     debug!(
@@ -438,14 +440,14 @@ where
         }
     }
 
-    fn wait_for_dkg_end(&mut self) -> Result<(), Error> {
+    async fn wait_for_dkg_end(&mut self) -> Result<(), Error> {
         let mut ids_to_await: HashSet<u32> = (1..=self.total_signers).collect();
         info!(
             "DKG Round #{}: waiting for Dkg End from signers {:?}",
             self.current_dkg_id, ids_to_await
         );
         while !ids_to_await.is_empty() {
-            if let MessageTypes::DkgEnd(dkg_end_msg) = self.wait_for_next_message()?.msg {
+            if let MessageTypes::DkgEnd(dkg_end_msg) = self.wait_for_next_message().await?.msg {
                 ids_to_await.remove(&dkg_end_msg.signer_id);
                 debug!(
                     "DKG_End round #{} from signer #{}. Waiting on {:?}",
@@ -456,12 +458,15 @@ where
         Ok(())
     }
 
-    fn wait_for_next_message(&mut self) -> Result<Message, Error> {
-        let get_next_message = || {
-            self.network.poll(self.id);
+    async fn wait_for_next_message(&mut self) -> Result<Message, Error> {
+        let Self { network, id, .. } = &self;
+
+        let get_next_message = || async move {
+            network.poll(id.clone()).await;
             // We only ever receive already verified messages. No need to check result.
-            self.network
+            network
                 .next_message()
+                .await
                 .ok_or_else(|| "No message yet".to_owned())
                 .map_err(backoff::Error::transient)
         };
@@ -474,7 +479,9 @@ where
             .with_initial_interval(Duration::from_millis(2))
             .with_max_interval(Duration::from_millis(128))
             .build();
-        backoff::retry_notify(backoff_timer, get_next_message, notify).map_err(|_| Error::Timeout)
+        backoff::future::retry_notify(backoff_timer, get_next_message, notify)
+            .await
+            .map_err(|_| Error::Timeout)
     }
 
     pub fn public_key(&self) -> &PublicKey {
@@ -527,11 +534,11 @@ mod test {
         }
     }
 
-    #[test]
-    fn integration_test_frost_coordinator_should_be_able_to_successfully_run_dkg_sign() {
+    #[tokio::test]
+    async fn integration_test_frost_coordinator_should_be_able_to_successfully_run_dkg_sign() {
         let relay_url = "http://127.0.0.1:9776".to_string();
         let (coordinator_config, coordinator_net_listen) =
-            spawn_processes_and_get_config(relay_url);
+            spawn_processes_and_get_config(relay_url).await;
 
         let mut coordinator = Coordinator::new(
             DEVNET_COORDINATOR_ID,
@@ -544,15 +551,16 @@ mod test {
             .run(&Command::DkgSign {
                 msg: vec![0, 1, 2, 3],
             })
+            .await
             .unwrap();
     }
 
-    #[test]
-    fn integration_test_frost_coordinator_should_provide_valid_signatures_after_dkg() {
+    #[tokio::test]
+    async fn integration_test_frost_coordinator_should_provide_valid_signatures_after_dkg() {
         let msg = vec![1, 3, 3, 7];
         let relay_url = "http://127.0.0.1:9777".to_string();
         let (coordinator_config, coordinator_net_listen) =
-            spawn_processes_and_get_config(relay_url);
+            spawn_processes_and_get_config(relay_url).await;
 
         let mut coordinator = Coordinator::new(
             DEVNET_COORDINATOR_ID,
@@ -561,18 +569,18 @@ mod test {
         )
         .unwrap();
 
-        let public_key = coordinator.run_distributed_key_generation().unwrap();
-        let (_, schnorr_proof) = coordinator.sign_message(&msg).unwrap();
+        let public_key = coordinator.run_distributed_key_generation().await.unwrap();
+        let (_, schnorr_proof) = coordinator.sign_message(&msg).await.unwrap();
 
         schnorr_proof.verify(&public_key.x(), &msg);
     }
 
-    #[test]
-    fn integration_test_frost_coordinator_should_provide_valid_signatures_after_restart() {
+    #[tokio::test]
+    async fn integration_test_frost_coordinator_should_provide_valid_signatures_after_restart() {
         let msg = vec![1, 3, 3, 7];
         let relay_url = "http://127.0.0.1:9778".to_string();
         let (coordinator_config, coordinator_net_listen) =
-            spawn_processes_and_get_config(relay_url);
+            spawn_processes_and_get_config(relay_url).await;
 
         let mut coordinator = Coordinator::new(
             DEVNET_COORDINATOR_ID,
@@ -581,7 +589,7 @@ mod test {
         )
         .unwrap();
 
-        let public_key = coordinator.run_distributed_key_generation().unwrap();
+        let public_key = coordinator.run_distributed_key_generation().await.unwrap();
         let dkg_public_shares = coordinator.get_dkg_public_shares().clone();
 
         let mut coordinator = Coordinator::new(
@@ -594,12 +602,12 @@ mod test {
         coordinator.set_aggregate_public_key(public_key);
         coordinator.set_dkg_public_shares(dkg_public_shares);
 
-        let (_, schnorr_proof) = coordinator.sign_message(&msg).unwrap();
+        let (_, schnorr_proof) = coordinator.sign_message(&msg).await.unwrap();
 
         schnorr_proof.verify(&public_key.x(), &msg);
     }
 
-    fn spawn_processes_and_get_config(relay_url: String) -> (Config, HttpNetListen) {
+    async fn spawn_processes_and_get_config(relay_url: String) -> (Config, HttpNetListen) {
         env::set_var("RUST_LOG", "info");
 
         let num_signers = parse_env::<u32>("num_signers", 6);
@@ -652,9 +660,9 @@ mod test {
 
         for i in 0..num_signers {
             let config = signer_configs[i as usize].clone();
-            thread::spawn(move || {
+            tokio::task::spawn(async move {
                 let mut signer = Signer::new(config, i + 1);
-                signer.start_p2p_sync().unwrap();
+                signer.start_p2p_async().await.unwrap();
             });
         }
 

@@ -15,14 +15,14 @@ pub struct Cli {
     pub command: Command,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     logging::initiate_tracing_subscriber();
 
     let cli = Cli::parse();
     match create_coordinator_from_path(cli.config) {
         Ok(mut coordinator) => {
-            let result = coordinator.run(&cli.command);
-            if let Err(e) = result {
+            if let Err(e) = coordinator.run(&cli.command).await {
                 warn!("Failed to execute command: {}", e);
             }
         }

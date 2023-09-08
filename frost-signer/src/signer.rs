@@ -2,10 +2,9 @@ use crate::config::{Config, PublicKeys};
 use crate::net::{Error as HttpNetError, HttpNet, HttpNetListen, Message, Net, NetListen};
 use crate::signing_round::{Error as SigningRoundError, MessageTypes, Signable, SigningRound};
 use p256k1::ecdsa;
-use std::sync::mpsc;
-use std::sync::mpsc::{Receiver, Sender};
-use std::thread::spawn;
-use std::{thread, time};
+use std::time;
+use tokio::sync::mpsc;
+use tokio::sync::mpsc::{UnboundedReceiver as Receiver, UnboundedSender as Sender};
 use tracing::{debug, warn};
 
 // on-disk format for frost save data
@@ -20,7 +19,7 @@ impl Signer {
         Self { config, signer_id }
     }
 
-    pub fn start_p2p_sync(&mut self) -> Result<(), Error> {
+    pub async fn start_p2p_async(&mut self) -> Result<(), Error> {
         let public_keys = self.config.public_keys.clone();
         let coordinator_public_key = self.config.coordinator_public_key;
 
@@ -28,22 +27,32 @@ impl Signer {
         let net: HttpNet = HttpNet::new(self.config.http_relay_url.clone());
         let net_queue = HttpNetListen::new(net.clone(), vec![]);
         // thread coordination
-        let (tx, rx): (Sender<Message>, Receiver<Message>) = mpsc::channel();
+        let (tx, rx): (Sender<Message>, Receiver<Message>) = mpsc::unbounded_channel();
 
         // start p2p sync
         let id = self.signer_id;
-        spawn(move || poll_loop(net_queue, tx, id, public_keys, coordinator_public_key));
+        tokio::task::spawn(poll_loop(
+            net_queue,
+            tx,
+            id,
+            public_keys,
+            coordinator_public_key,
+        ));
 
         // listen to p2p messages
-        self.start_signing_round(&net, rx)
+        self.start_signing_round(&net, rx).await
     }
 
-    fn start_signing_round(&self, net: &HttpNet, rx: Receiver<Message>) -> Result<(), Error> {
+    async fn start_signing_round(
+        &self,
+        net: &HttpNet,
+        mut rx: Receiver<Message>,
+    ) -> Result<(), Error> {
         let network_private_key = self.config.network_private_key;
         let mut round = SigningRound::from(self);
         loop {
-            // Retreive a message from coordinator
-            let inbound = rx.recv()?; // blocking
+            // Retrieve a message from the coordinator
+            let inbound = rx.recv().await.ok_or(Error::RecvStreamEnded)?;
             let outbounds = round.process(inbound.msg)?;
             for out in outbounds {
                 let msg = Message {
@@ -83,7 +92,7 @@ impl Signer {
                             .to_vec(),
                     },
                 };
-                net.send_message(msg)?;
+                net.send_message(msg).await?;
             }
         }
     }
@@ -97,21 +106,21 @@ pub enum Error {
     #[error("Signing Round Error: {0}")]
     SigningRoundError(#[from] SigningRoundError),
 
-    #[error("Failed to retrieve message: {0}")]
-    RecvError(#[from] mpsc::RecvError),
-
     #[error("Failed to send message")]
     SendError,
+
+    #[error("Receive stream ended")]
+    RecvStreamEnded,
 }
 
-impl From<mpsc::SendError<Message>> for Error {
-    fn from(_: mpsc::SendError<Message>) -> Error {
+impl From<mpsc::error::SendError<Message>> for Error {
+    fn from(_: mpsc::error::SendError<Message>) -> Error {
         Error::SendError
     }
 }
 
-fn poll_loop(
-    mut net: HttpNetListen,
+async fn poll_loop(
+    net: HttpNetListen,
     tx: Sender<Message>,
     id: u32,
     public_keys: PublicKeys,
@@ -121,8 +130,8 @@ fn poll_loop(
     const MAX_TIMEOUT: u64 = 128;
     let mut timeout = BASE_TIMEOUT;
     loop {
-        net.poll(id);
-        match net.next_message() {
+        net.poll(id).await;
+        match net.next_message().await {
             None => {
                 timeout = if timeout == 0 {
                     BASE_TIMEOUT
@@ -140,7 +149,7 @@ fn poll_loop(
                 }
             }
         };
-        thread::sleep(time::Duration::from_millis(timeout));
+        tokio::time::sleep(time::Duration::from_millis(timeout)).await;
     }
 }
 

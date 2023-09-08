@@ -20,7 +20,6 @@ use std::{
     fs::File,
     path::{Path, PathBuf},
     sync::mpsc::RecvError,
-    thread::sleep,
     time::Duration,
 };
 use tracing::{debug, info, warn};
@@ -37,6 +36,7 @@ use crate::{
     },
     stacks_wallet::BuildStacksTransaction,
 };
+use async_trait::async_trait;
 
 // Traits in scope
 use crate::bitcoin_node::{
@@ -98,11 +98,12 @@ pub enum Error {
     PointError(String),
 }
 
-pub trait Coordinator: Sized {
-    type PegQueue: PegQueue;
+#[async_trait]
+pub trait Coordinator: Sized + Send {
+    type PegQueue: PegQueue + Send + Sync;
     type FeeWallet: PegWallet;
     type StacksNode: StacksNode;
-    type BitcoinNode: BitcoinNode;
+    type BitcoinNode: BitcoinNode + Send + Sync;
 
     // Required methods
     fn peg_queue(&self) -> &Self::PegQueue;
@@ -115,26 +116,27 @@ pub trait Coordinator: Sized {
     fn bitcoin_node(&self) -> &Self::BitcoinNode;
 
     // Provided methods
-    fn run(mut self, polling_interval: u64) -> Result<()> {
+    async fn run(mut self, polling_interval: u64) -> Result<()> {
         loop {
             info!("Polling for withdrawal and deposit requests to process...");
             self.peg_queue().poll(self.stacks_node())?;
-            self.process_queue()?;
+            self.process_queue().await?;
 
-            sleep(Duration::from_secs(polling_interval));
+            tokio::time::sleep(Duration::from_secs(polling_interval)).await;
         }
     }
 
-    fn process_queue(&mut self) -> Result<()> {
+    async fn process_queue(&mut self) -> Result<()> {
+        let peg_queue = self.peg_queue();
         loop {
-            match self.peg_queue().sbtc_op()? {
+            match peg_queue.sbtc_op()? {
                 Some(SbtcOp::PegIn(op)) => {
                     debug!("Processing peg in request: {:?}", op);
                     self.peg_in(op)?;
                 }
                 Some(SbtcOp::PegOutRequest(op)) => {
                     debug!("Processing peg out request: {:?}", op);
-                    self.peg_out(op)?;
+                    self.peg_out(op).await?;
                 }
                 None => return Ok(()),
             }
@@ -143,24 +145,26 @@ pub trait Coordinator: Sized {
 }
 
 // Private helper functions
+#[async_trait]
 trait CoordinatorHelpers: Coordinator {
     fn peg_in(&mut self, op: stacks_node::PegInOp) -> Result<()> {
         // Build a transaction from the peg in op and broadcast it to the node with reattempts
         self.try_broadcast_transaction(&op)
     }
 
-    fn peg_out(&mut self, op: stacks_node::PegOutRequestOp) -> Result<()> {
+    async fn peg_out(&mut self, op: stacks_node::PegOutRequestOp) -> Result<()> {
         // First build both the sBTC and BTC transactions before attempting to broadcast either of them
         // This ensures that if either of the transactions fail to build, neither of them will be broadcast
 
         // Build and sign a fulfilled bitcoin transaction
-        let fulfill_tx = self.fulfill_peg_out(&op)?;
+        let fulfill_tx = self.fulfill_peg_out(&op).await?;
 
         // Build a transaction from the peg out request op and broadcast it to the node with reattempts
         self.try_broadcast_transaction(&op)?;
 
         // Broadcast the BTC transaction to the Bitcoin node
-        self.bitcoin_node().broadcast_transaction(&fulfill_tx)?;
+        let btc_node = self.bitcoin_node();
+        btc_node.broadcast_transaction(&fulfill_tx).await?;
         info!(
             "Broadcasted fulfilled BTC transaction: {}",
             fulfill_tx.txid()
@@ -168,11 +172,12 @@ trait CoordinatorHelpers: Coordinator {
         Ok(())
     }
 
-    fn fulfill_peg_out(&mut self, op: &stacks_node::PegOutRequestOp) -> Result<BitcoinTransaction> {
+    async fn fulfill_peg_out(&mut self, op: &stacks_node::PegOutRequestOp) -> Result<BitcoinTransaction> {
         // Retreive the utxos
-        let utxos = self
-            .bitcoin_node()
-            .list_unspent(self.fee_wallet().bitcoin().address())?;
+        let address = self.fee_wallet().bitcoin().address();
+        let btc_node = self.bitcoin_node();
+        let utxos = btc_node
+            .list_unspent(address).await?;
 
         // Build unsigned fulfilled peg out transaction
         let (mut tx, prevouts) = self.fee_wallet().bitcoin().fulfill_peg_out(op, utxos)?;
@@ -189,7 +194,7 @@ trait CoordinatorHelpers: Coordinator {
                 .map_err(Error::SigningError)?;
             let (_frost_sig, schnorr_proof) = self
                 .frost_coordinator_mut()
-                .sign_message(&taproot_sighash.as_hash())?;
+                .sign_message(&taproot_sighash.as_hash()).await?;
 
             debug!(
                 "Fulfill Tx {:?} SchnorrProof ({},{})",
@@ -269,14 +274,14 @@ pub struct StacksCoordinator {
 }
 
 impl StacksCoordinator {
-    pub fn run_dkg_round(&mut self) -> Result<XOnlyPublicKey> {
-        let p = self.frost_coordinator.run_distributed_key_generation()?;
+    pub async fn run_dkg_round(&mut self) -> Result<XOnlyPublicKey> {
+        let p = self.frost_coordinator.run_distributed_key_generation().await?;
         XOnlyPublicKey::from_slice(&p.x().to_bytes())
             .map_err(|e| Error::InvalidPublicKey(e.to_string()))
     }
 
-    pub fn sign_message(&mut self, message: &str) -> Result<(Signature, SchnorrProof)> {
-        Ok(self.frost_coordinator.sign_message(message.as_bytes())?)
+    pub async fn sign_message(&mut self, message: &str) -> Result<(Signature, SchnorrProof)> {
+        Ok(self.frost_coordinator.sign_message(message.as_bytes()).await?)
     }
 }
 
@@ -409,7 +414,7 @@ fn write_dkg_public_shares(
     Ok(())
 }
 
-fn load_dkg_data(
+async fn load_dkg_data(
     data_directory: Option<&str>,
     frost_coordinator: &mut FrostCoordinator,
     stacks_node: &mut NodeClient,
@@ -429,7 +434,7 @@ fn load_dkg_data(
         Ok(xonly_pubkey)
     } else {
         // If we don't get one stored in the contract...run the DKG round and get the resulting public key and use that
-        let point = frost_coordinator.run_distributed_key_generation()?;
+        let point = frost_coordinator.run_distributed_key_generation().await?;
 
         if let Some(data_directory) = data_directory {
             write_dkg_public_shares(data_directory, frost_coordinator.get_dkg_public_shares())?;
@@ -447,63 +452,60 @@ fn load_dkg_data(
     }
 }
 
-impl TryFrom<&Config> for StacksCoordinator {
-    type Error = Error;
-    fn try_from(config: &Config) -> Result<Self> {
-        info!("Initializing stacks coordinator...");
-        let mut local_stacks_node = NodeClient::new(
-            config.stacks_node_rpc_url.clone(),
-            config.contract_name.clone(),
-            config.contract_address,
-        );
+async fn config_to_stacks_coordinator(config: &Config) -> Result<StacksCoordinator> {
+    info!("Initializing stacks coordinator...");
+    let mut local_stacks_node = NodeClient::new(
+        config.stacks_node_rpc_url.clone(),
+        config.contract_name.clone(),
+        config.contract_address,
+    );
 
-        let stacks_wallet = StacksWallet::new(
-            config.contract_name.clone(),
-            config.contract_address,
-            config.stacks_private_key,
-            config.stacks_address,
-            config.stacks_version,
-            config.transaction_fee,
-        );
+    let stacks_wallet = StacksWallet::new(
+        config.contract_name.clone(),
+        config.contract_address,
+        config.stacks_private_key,
+        config.stacks_address,
+        config.stacks_version,
+        config.transaction_fee,
+    );
 
-        let mut frost_coordinator =
-            create_frost_coordinator(config, &mut local_stacks_node, &stacks_wallet)?;
+    let mut frost_coordinator =
+        create_frost_coordinator(config, &mut local_stacks_node, &stacks_wallet)?;
 
-        // Load the public key from either the frost_coordinator or the sBTC contract
-        let xonly_pubkey = load_dkg_data(
-            config.data_directory.as_deref(),
-            &mut frost_coordinator,
-            &mut local_stacks_node,
-            &stacks_wallet,
-            &config.stacks_address,
-        )?;
-        let bitcoin_wallet = BitcoinWallet::new(xonly_pubkey, config.bitcoin_network);
+    // Load the public key from either the frost_coordinator or the sBTC contract
+    let xonly_pubkey = load_dkg_data(
+        config.data_directory.as_deref(),
+        &mut frost_coordinator,
+        &mut local_stacks_node,
+        &stacks_wallet,
+        &config.stacks_address,
+    ).await?;
+    let bitcoin_wallet = BitcoinWallet::new(xonly_pubkey, config.bitcoin_network);
 
-        // Load the bitcoin wallet
-        let local_bitcoin_node = LocalhostBitcoinNode::new(config.bitcoin_node_rpc_url.clone());
-        local_bitcoin_node.load_wallet(bitcoin_wallet.address())?;
+    // Load the bitcoin wallet
+    let local_bitcoin_node = LocalhostBitcoinNode::new(config.bitcoin_node_rpc_url.clone());
+    local_bitcoin_node.load_wallet(bitcoin_wallet.address()).await?;
 
-        // If a user has not specified a start block height, begin from the current burn block height by default
-        let start_block_height = config.start_block_height;
-        let current_block_height = local_stacks_node.burn_block_height()?;
-        let local_peg_queue = if let Some(path) = &config.data_directory {
-            let db_path = PathBuf::from(path).join("peg_queue.sqlite");
-            SqlitePegQueue::new(db_path, start_block_height, current_block_height)
-        } else {
-            SqlitePegQueue::in_memory(start_block_height, current_block_height)
-        }?;
+    // If a user has not specified a start block height, begin from the current burn block height by default
+    let start_block_height = config.start_block_height;
+    let current_block_height = local_stacks_node.burn_block_height()?;
+    let local_peg_queue = if let Some(path) = &config.data_directory {
+        let db_path = PathBuf::from(path).join("peg_queue.sqlite");
+        SqlitePegQueue::new(db_path, start_block_height, current_block_height)
+    } else {
+        SqlitePegQueue::in_memory(start_block_height, current_block_height)
+    }?;
 
-        Ok(Self {
-            local_peg_queue,
-            local_stacks_node,
-            local_bitcoin_node,
-            frost_coordinator,
-            local_fee_wallet: WrapPegWallet {
-                bitcoin_wallet,
-                stacks_wallet,
-            },
-        })
-    }
+    Ok(StacksCoordinator {
+        local_peg_queue,
+        local_stacks_node,
+        local_bitcoin_node,
+        frost_coordinator,
+        local_fee_wallet: WrapPegWallet {
+            bitcoin_wallet,
+            stacks_wallet,
+        },
+    })
 }
 
 impl Coordinator for StacksCoordinator {

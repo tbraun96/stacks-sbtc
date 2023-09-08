@@ -5,7 +5,8 @@ use stacks_coordinator::config::Config;
 use stacks_coordinator::coordinator::{Coordinator, StacksCoordinator};
 use tracing::{error, info, warn};
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
 
     logging::initiate_tracing_subscriber();
@@ -43,7 +44,7 @@ fn main() {
                             };
                             info!("Running Signing Round");
                             let (signature, schnorr_proof) =
-                                match coordinator.sign_message("Hello, world!") {
+                                match coordinator.sign_message("Hello, world!").await {
                                     Ok((sig, proof)) => (sig, proof),
                                     Err(e) => {
                                         panic!("signing message failed: {e}");
