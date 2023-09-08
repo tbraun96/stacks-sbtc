@@ -15,12 +15,16 @@ pub enum Error {
     StacksNodeError(#[from] StacksNodeError),
 }
 
+#[async_trait::async_trait]
 pub trait PegQueue {
-    fn sbtc_op(&self) -> Result<Option<SbtcOp>, Error>;
-    fn poll<N: stacks_node::StacksNode>(&self, stacks_node: &N) -> Result<(), Error>;
+    async fn sbtc_op(&self) -> Result<Option<SbtcOp>, Error>;
+    async fn poll<N: stacks_node::StacksNode>(&self, stacks_node: &N) -> Result<(), Error>;
 
-    fn acknowledge(&self, txid: &Txid, burn_header_hash: &BurnchainHeaderHash)
-        -> Result<(), Error>;
+    async fn acknowledge(
+        &self,
+        txid: &Txid,
+        burn_header_hash: &BurnchainHeaderHash,
+    ) -> Result<(), Error>;
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]

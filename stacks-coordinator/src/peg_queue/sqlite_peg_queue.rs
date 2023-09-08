@@ -1,10 +1,14 @@
-use rusqlite::{Connection as RusqliteConnection, Error as RusqliteError, Row as SqliteRow};
+use async_trait::async_trait;
+use sqlx::{Connection, Error as SqlxError, FromRow, Row, SqliteConnection as SqlxConnection};
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use blockstack_lib::burnchains::Txid;
 use blockstack_lib::types::chainstate::BurnchainHeaderHash;
 use blockstack_lib::util::HexError;
+use sqlx::sqlite::SqliteRow;
+use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::peg_queue::{Error as PegQueueError, PegQueue, SbtcOp};
 use crate::stacks_node::{Error as StacksNodeError, PegInOp, PegOutRequestOp, StacksNode};
@@ -13,8 +17,8 @@ use tracing::{debug, info};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("Rusqlite Error: {0}")]
-    RusqliteError(#[from] RusqliteError),
+    #[error("Sqlx Error: {0}")]
+    SqlxError(#[from] SqlxError),
     #[error("JSON serialization failure: {0}")]
     JsonError(#[from] serde_json::Error),
     #[error("Hex codec error: {0}")]
@@ -24,62 +28,72 @@ pub enum Error {
 }
 
 // Workaround to allow non-perfect conversions in `Entry::from_row`
-impl From<Error> for rusqlite::Error {
+impl From<Error> for sqlx::Error {
     fn from(err: Error) -> Self {
-        Self::InvalidColumnType(0, err.to_string(), rusqlite::types::Type::Text)
+        Self::ColumnNotFound(err.to_string())
     }
 }
 
 pub struct SqlitePegQueue {
-    conn: rusqlite::Connection,
+    conn: Arc<Mutex<SqlxConnection>>,
 }
 
 impl SqlitePegQueue {
-    pub fn new<P: AsRef<Path>>(
+    pub async fn new<P: AsRef<Path>>(
         path: P,
         start_block_height: Option<u64>,
         current_block_height: u64,
     ) -> Result<Self, Error> {
         Self::from_connection(
-            RusqliteConnection::open(path)?,
+            SqlxConnection::connect(&format!("{}", path.as_ref().display())).await?,
             start_block_height,
             current_block_height,
         )
+        .await
     }
 
-    pub fn in_memory(
+    pub async fn in_memory(
         start_block_height: Option<u64>,
         current_block_height: u64,
     ) -> Result<Self, Error> {
         Self::from_connection(
-            RusqliteConnection::open_in_memory()?,
+            SqlxConnection::connect("sqlite::memory:").await?,
             start_block_height,
             current_block_height,
         )
+        .await
     }
 
-    fn from_connection(
-        conn: RusqliteConnection,
+    async fn from_connection(
+        mut conn: SqlxConnection,
         start_block_height: Option<u64>,
         current_block_height: u64,
     ) -> Result<Self, Error> {
-        let this = Self { conn };
-        this.conn
-            .execute(Self::create_sbtc_ops_table(), rusqlite::params![])?;
-        this.conn
-            .execute(Self::create_metadata_table(), rusqlite::params![])?;
+        sqlx::query(Self::create_sbtc_ops_table())
+            .execute(&mut conn)
+            .await?;
+
+        sqlx::query(Self::create_metadata_table())
+            .execute(&mut conn)
+            .await?;
+
+        let this = Self {
+            conn: Arc::new(Mutex::new(conn)),
+        };
 
         // Prevent overflow by calling saturating sub to ensure we don't go below 0
         if let Some(start_block_height) = start_block_height {
-            this.insert_last_processed_block_height(start_block_height.saturating_sub(1))?;
-        } else if this.last_processed_block_height().is_err() {
+            this.insert_last_processed_block_height(start_block_height.saturating_sub(1))
+                .await?;
+        } else if this.last_processed_block_height().await.is_err() {
             // If we don't have a last processed block height, set it to the current block height
-            this.insert_last_processed_block_height(current_block_height.saturating_sub(1))?;
+            this.insert_last_processed_block_height(current_block_height.saturating_sub(1))
+                .await?;
         }
         Ok(this)
     }
 
-    fn poll_peg_in_ops<N: StacksNode>(
+    async fn poll_peg_in_ops<N: StacksNode>(
         &self,
         stacks_node: &N,
         block_height: u64,
@@ -92,14 +106,14 @@ impl SqlitePegQueue {
             Ok(peg_in_ops) => {
                 for peg_in_op in peg_in_ops {
                     let entry = Entry::from(peg_in_op);
-                    self.insert(&entry)?;
+                    self.insert(&entry).await?;
                 }
             }
         }
         Ok(())
     }
 
-    fn poll_peg_out_request_ops<N: StacksNode>(
+    async fn poll_peg_out_request_ops<N: StacksNode>(
         &self,
         stacks_node: &N,
         block_height: u64,
@@ -112,65 +126,74 @@ impl SqlitePegQueue {
             Ok(peg_out_request_ops) => {
                 for peg_out_request_op in peg_out_request_ops {
                     let entry = Entry::from(peg_out_request_op);
-                    self.insert(&entry)?;
+                    self.insert(&entry).await?;
                 }
             }
         }
         Ok(())
     }
-    fn insert(&self, entry: &Entry) -> Result<(), Error> {
-        self.conn.execute(
-            Self::sql_insert(),
-            rusqlite::params![
-                entry.txid.to_hex(),
-                entry.burn_header_hash.to_hex(),
-                entry.block_height as i64, // Stacks will crash before the coordinator if this is invalid
-                serde_json::to_string(&entry.op)?,
-                entry.status.as_str(),
-            ],
-        )?;
+
+    async fn insert(&self, entry: &Entry) -> Result<(), Error> {
+        let mut conn = self.get_conn().await;
+        sqlx::query(Self::sql_insert())
+            .bind(entry.txid.to_hex())
+            .bind(entry.burn_header_hash.to_hex())
+            .bind(entry.block_height as i64)
+            .bind(serde_json::to_string(&entry.op)?)
+            .bind(entry.status.as_str())
+            .execute(&mut *conn)
+            .await?;
 
         Ok(())
     }
 
-    fn get_single_entry_with_status(&self, status: &Status) -> Result<Option<Entry>, Error> {
-        Ok(self
-            .conn
-            .prepare(Self::sql_select_status())?
-            .query_map(rusqlite::params![status.as_str()], Entry::from_row)?
-            .next()
-            .transpose()?)
+    async fn get_single_entry_with_status(&self, status: &Status) -> Result<Option<Entry>, Error> {
+        let mut conn = self.get_conn().await;
+        let result = sqlx::query_as::<_, Entry>(Self::sql_select_status())
+            .bind(status.as_str())
+            .fetch_optional(&mut *conn)
+            .await?;
+        Ok(result)
     }
 
-    fn get_entry(
+    async fn get_entry(
         &self,
         txid: &Txid,
         burn_header_hash: &BurnchainHeaderHash,
     ) -> Result<Entry, Error> {
-        Ok(self.conn.prepare(Self::sql_select_pk())?.query_row(
-            rusqlite::params![txid.to_hex(), burn_header_hash.to_hex()],
-            Entry::from_row,
-        )?)
+        let mut conn = self.get_conn().await;
+        let result = sqlx::query_as::<_, Entry>(Self::sql_select_pk())
+            .bind(txid.to_hex())
+            .bind(burn_header_hash.to_hex())
+            .fetch_one(&mut *conn)
+            .await?;
+        Ok(result)
     }
 
-    fn last_processed_block_height(&self) -> Result<u64, Error> {
-        Ok(self
-            .conn
-            .query_row(
-                Self::sql_select_last_processed_block_height(),
-                rusqlite::params![],
-                |row| row.get::<_, i64>(0),
-            )
-            .map(|height| height as u64)?)
+    async fn last_processed_block_height(&self) -> Result<u64, Error> {
+        let mut conn = self.get_conn().await;
+        let height: Option<i64> =
+            sqlx::query_scalar(Self::sql_select_last_processed_block_height())
+                .fetch_optional(&mut *conn)
+                .await?;
+
+        height
+            .map(|height| height as u64)
+            .ok_or(Error::SqlxError(SqlxError::RowNotFound))
     }
 
-    fn insert_last_processed_block_height(&self, height: u64) -> Result<(), Error> {
-        self.conn.execute(
-            Self::sql_insert_last_processed_block_height(),
-            rusqlite::params![height as i64],
-        )?;
+    async fn insert_last_processed_block_height(&self, height: u64) -> Result<(), Error> {
+        let mut conn = self.get_conn().await;
+        sqlx::query(Self::sql_insert_last_processed_block_height())
+            .bind(height as i64)
+            .execute(&mut *conn)
+            .await?;
 
         Ok(())
+    }
+
+    async fn get_conn(&self) -> OwnedMutexGuard<SqlxConnection> {
+        self.conn.clone().lock_owned().await
     }
 
     const fn create_sbtc_ops_table() -> &'static str {
@@ -201,19 +224,19 @@ impl SqlitePegQueue {
 
     const fn sql_insert() -> &'static str {
         r#"
-        REPLACE INTO sbtc_ops (txid, burn_header_hash, block_height, op, status) VALUES (?1, ?2, ?3, ?4, ?5)
+        REPLACE INTO sbtc_ops (txid, burn_header_hash, block_height, op, status) VALUES (?, ?, ?, ?, ?)
         "#
     }
 
     const fn sql_select_status() -> &'static str {
         r#"
-        SELECT txid, burn_header_hash, block_height, op, status FROM sbtc_ops WHERE status=?1 ORDER BY block_height, op ASC
+        SELECT txid, burn_header_hash, block_height, op, status FROM sbtc_ops WHERE status=? ORDER BY block_height, op ASC
         "#
     }
 
     const fn sql_select_pk() -> &'static str {
         r#"
-        SELECT txid, burn_header_hash, block_height, op, status FROM sbtc_ops WHERE txid=?1 AND burn_header_hash=?2
+        SELECT txid, burn_header_hash, block_height, op, status FROM sbtc_ops WHERE txid=? AND burn_header_hash=?
         "#
     }
 
@@ -225,28 +248,32 @@ impl SqlitePegQueue {
 
     const fn sql_insert_last_processed_block_height() -> &'static str {
         r#"
-            REPLACE INTO peg_queue_metadata (id, last_processed_block_height) VALUES ('peg_queue', ?1)
+            REPLACE INTO peg_queue_metadata (id, last_processed_block_height) VALUES ('peg_queue', ?)
         "#
     }
 }
 
+#[async_trait]
 impl PegQueue for SqlitePegQueue {
-    fn sbtc_op(&self) -> Result<Option<SbtcOp>, PegQueueError> {
-        let maybe_entry = self.get_single_entry_with_status(&Status::New)?;
+    async fn sbtc_op(&self) -> Result<Option<SbtcOp>, PegQueueError> {
+        let maybe_entry = self.get_single_entry_with_status(&Status::New).await?;
 
         let Some(mut entry) = maybe_entry else {
             return Ok(None);
         };
 
         entry.status = Status::Pending;
-        self.insert(&entry)?;
+        self.insert(&entry).await?;
 
         Ok(Some(entry.op))
     }
 
-    fn poll<N: StacksNode>(&self, stacks_node: &N) -> Result<(), PegQueueError> {
+    async fn poll<N: StacksNode>(&self, stacks_node: &N) -> Result<(), PegQueueError> {
         let target_block_height = stacks_node.burn_block_height()?;
-        let start_block_height = self.last_processed_block_height().map(|count| count + 1)?;
+        let start_block_height = self
+            .last_processed_block_height()
+            .await
+            .map(|count| count + 1)?;
 
         if start_block_height > target_block_height {
             info!("No new blocks to process");
@@ -259,23 +286,25 @@ impl PegQueue for SqlitePegQueue {
         );
 
         for block_height in start_block_height..=target_block_height {
-            self.poll_peg_in_ops(stacks_node, block_height)?;
-            self.poll_peg_out_request_ops(stacks_node, block_height)?;
-            self.insert_last_processed_block_height(block_height)?;
+            self.poll_peg_in_ops(stacks_node, block_height).await?;
+            self.poll_peg_out_request_ops(stacks_node, block_height)
+                .await?;
+            self.insert_last_processed_block_height(block_height)
+                .await?;
             info!("Processed block height {}", block_height);
         }
         Ok(())
     }
 
-    fn acknowledge(
+    async fn acknowledge(
         &self,
         txid: &Txid,
         burn_header_hash: &BurnchainHeaderHash,
     ) -> Result<(), PegQueueError> {
-        let mut entry = self.get_entry(txid, burn_header_hash)?;
+        let mut entry = self.get_entry(txid, burn_header_hash).await?;
 
         entry.status = Status::Acknowledged;
-        self.insert(&entry)?;
+        self.insert(&entry).await?;
 
         Ok(())
     }
@@ -290,18 +319,19 @@ struct Entry {
     status: Status,
 }
 
-impl Entry {
-    fn from_row(row: &SqliteRow) -> Result<Self, RusqliteError> {
-        let txid = Txid::from_hex(&row.get::<_, String>(0)?).map_err(Error::from)?;
+impl<'r> FromRow<'r, SqliteRow> for Entry {
+    fn from_row(row: &'r SqliteRow) -> Result<Self, SqlxError> {
+        let txid = Txid::from_hex(&row.try_get::<String, _>(0)?).map_err(Error::from)?;
 
         let burn_header_hash =
-            BurnchainHeaderHash::from_hex(&row.get::<_, String>(1)?).map_err(Error::from)?;
+            BurnchainHeaderHash::from_hex(&row.try_get::<String, _>(1)?).map_err(Error::from)?;
 
-        let block_height = row.get::<_, i64>(2)? as u64; // Stacks will crash before the coordinator if this is invalid
+        let block_height = row.try_get::<i64, _>(2)? as u64; // Stacks will crash before the coordinator if this is invalid
 
-        let op: SbtcOp = serde_json::from_str(&row.get::<_, String>(3)?).map_err(Error::from)?;
+        let op: SbtcOp =
+            serde_json::from_str(&row.try_get::<String, _>(3)?).map_err(Error::from)?;
 
-        let status: Status = row.get::<_, String>(4)?.parse()?;
+        let status: Status = row.try_get::<String, _>(4)?.parse()?;
 
         Ok(Self {
             burn_header_hash,
@@ -381,42 +411,42 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn calling_sbtc_op_should_return_new_peg_ops() {
-        let peg_queue = SqlitePegQueue::in_memory(Some(1), 2).unwrap();
+    #[tokio::test]
+    async fn calling_sbtc_op_should_return_new_peg_ops() {
+        let peg_queue = SqlitePegQueue::in_memory(Some(1), 2).await.unwrap();
         let number_of_simulated_blocks: u64 = 3;
 
         let stacks_node_mock = default_stacks_node_mock(number_of_simulated_blocks);
 
         // No ops before polling
-        assert!(peg_queue.sbtc_op().unwrap().is_none());
+        assert!(peg_queue.sbtc_op().await.unwrap().is_none());
 
         // Should cause the peg_queue to fetch 3 peg in ops
-        peg_queue.poll(&stacks_node_mock).unwrap();
+        peg_queue.poll(&stacks_node_mock).await.unwrap();
 
         for height in 1..=number_of_simulated_blocks {
-            let next_op = peg_queue.sbtc_op().unwrap().unwrap();
+            let next_op = peg_queue.sbtc_op().await.unwrap().unwrap();
             assert!(next_op.as_peg_in().is_some());
             assert_eq!(next_op.as_peg_in().unwrap().block_height, height);
 
-            let next_op = peg_queue.sbtc_op().unwrap().unwrap();
+            let next_op = peg_queue.sbtc_op().await.unwrap().unwrap();
             assert!(next_op.as_peg_out_request().is_some());
             assert_eq!(next_op.as_peg_out_request().unwrap().block_height, height);
         }
     }
 
-    #[test]
-    fn calling_poll_should_not_query_new_ops_if_at_block_height() {
-        let peg_queue = SqlitePegQueue::in_memory(Some(1), 2).unwrap();
+    #[tokio::test]
+    async fn calling_poll_should_not_query_new_ops_if_at_block_height() {
+        let peg_queue = SqlitePegQueue::in_memory(Some(1), 2).await.unwrap();
         let number_of_simulated_blocks: u64 = 3;
 
         let stacks_node_mock = default_stacks_node_mock(number_of_simulated_blocks);
 
         // Fast forward past first poll
-        peg_queue.poll(&stacks_node_mock).unwrap();
+        peg_queue.poll(&stacks_node_mock).await.unwrap();
         for _ in 1..=number_of_simulated_blocks {
-            peg_queue.sbtc_op().unwrap().unwrap();
-            peg_queue.sbtc_op().unwrap().unwrap();
+            peg_queue.sbtc_op().await.unwrap().unwrap();
+            peg_queue.sbtc_op().await.unwrap().unwrap();
         }
 
         let mut stacks_node_mock = stacks_node::MockStacksNode::new();
@@ -428,77 +458,81 @@ mod tests {
         stacks_node_mock.expect_get_peg_in_ops().never();
         stacks_node_mock.expect_get_peg_out_request_ops().never();
 
-        peg_queue.poll(&stacks_node_mock).unwrap();
+        peg_queue.poll(&stacks_node_mock).await.unwrap();
     }
 
-    #[test]
-    fn calling_poll_should_find_new_ops_if_at_new_block_height() {
-        let peg_queue = SqlitePegQueue::in_memory(Some(1), 2).unwrap();
+    #[tokio::test]
+    async fn calling_poll_should_find_new_ops_if_at_new_block_height() {
+        let peg_queue = SqlitePegQueue::in_memory(Some(1), 2).await.unwrap();
         let number_of_simulated_blocks: u64 = 3;
         let number_of_simulated_blocks_second_poll: u64 = 5;
 
         let stacks_node_mock = default_stacks_node_mock(number_of_simulated_blocks);
 
         // Fast forward past first poll
-        peg_queue.poll(&stacks_node_mock).unwrap();
+        peg_queue.poll(&stacks_node_mock).await.unwrap();
         for _ in 1..=number_of_simulated_blocks {
-            peg_queue.sbtc_op().unwrap().unwrap();
-            peg_queue.sbtc_op().unwrap().unwrap();
+            peg_queue.sbtc_op().await.unwrap().unwrap();
+            peg_queue.sbtc_op().await.unwrap().unwrap();
         }
 
         let stacks_node_mock = default_stacks_node_mock(number_of_simulated_blocks_second_poll);
-        peg_queue.poll(&stacks_node_mock).unwrap();
+        peg_queue.poll(&stacks_node_mock).await.unwrap();
 
         for height in number_of_simulated_blocks + 1..=number_of_simulated_blocks_second_poll {
-            let next_op = peg_queue.sbtc_op().unwrap().unwrap();
+            let next_op = peg_queue.sbtc_op().await.unwrap().unwrap();
             assert!(next_op.as_peg_in().is_some());
             assert_eq!(next_op.as_peg_in().unwrap().block_height, height);
 
-            let next_op = peg_queue.sbtc_op().unwrap().unwrap();
+            let next_op = peg_queue.sbtc_op().await.unwrap().unwrap();
             assert!(next_op.as_peg_out_request().is_some());
             assert_eq!(next_op.as_peg_out_request().unwrap().block_height, height);
         }
     }
 
-    #[test]
-    fn acknowledged_entries_should_have_acknowledge_status() {
-        let peg_queue = SqlitePegQueue::in_memory(Some(1), 2).unwrap();
+    #[tokio::test]
+    async fn acknowledged_entries_should_have_acknowledge_status() {
+        let peg_queue = SqlitePegQueue::in_memory(Some(1), 2).await.unwrap();
         let number_of_simulated_blocks: u64 = 1;
 
         let stacks_node_mock = default_stacks_node_mock(number_of_simulated_blocks);
-        peg_queue.poll(&stacks_node_mock).unwrap();
+        peg_queue.poll(&stacks_node_mock).await.unwrap();
 
-        let next_op = peg_queue.sbtc_op().unwrap().unwrap();
+        let next_op = peg_queue.sbtc_op().await.unwrap().unwrap();
         let peg_in_op = next_op.as_peg_in().unwrap();
         peg_queue
             .acknowledge(&peg_in_op.txid, &peg_in_op.burn_header_hash)
+            .await
             .unwrap();
 
         let entry = peg_queue
             .get_entry(&peg_in_op.txid, &peg_in_op.burn_header_hash)
+            .await
             .unwrap();
 
         assert_eq!(entry.status, Status::Acknowledged);
     }
 
-    #[test]
-    fn should_start_at_last_observed_block_height_when_polling() {
+    #[tokio::test]
+    async fn should_start_at_last_observed_block_height_when_polling() {
         let start_block_height: u64 = 10;
         let initial_node_block_height: u64 = 20;
         let second_poll_node_block_height: u64 = 40;
 
         let peg_queue =
-            SqlitePegQueue::in_memory(Some(start_block_height), initial_node_block_height).unwrap();
+            SqlitePegQueue::in_memory(Some(start_block_height), initial_node_block_height)
+                .await
+                .unwrap();
 
         let stacks_node_mock = default_stacks_node_mock(initial_node_block_height);
-        peg_queue.poll(&stacks_node_mock).unwrap();
+        peg_queue.poll(&stacks_node_mock).await.unwrap();
 
-        assert_eq!(peg_queue.last_processed_block_height().unwrap(), 20);
+        assert_eq!(peg_queue.last_processed_block_height().await.unwrap(), 20);
 
         let stacks_node_mock = stacks_node_mock_with_no_sbtc_ops(second_poll_node_block_height);
-        peg_queue.poll(&stacks_node_mock).unwrap();
+        peg_queue.poll(&stacks_node_mock).await.unwrap();
 
-        assert_eq!(peg_queue.last_processed_block_height().unwrap(), 40);
+        assert_eq!(peg_queue.last_processed_block_height().await.unwrap(), 40);
     }
 
     fn default_stacks_node_mock(block_height: u64) -> stacks_node::MockStacksNode {

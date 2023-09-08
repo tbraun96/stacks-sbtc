@@ -119,7 +119,9 @@ pub trait Coordinator: Sized + Send {
     async fn run(mut self, polling_interval: u64) -> Result<()> {
         loop {
             info!("Polling for withdrawal and deposit requests to process...");
-            self.peg_queue().poll(self.stacks_node())?;
+            let peg_queue = self.peg_queue();
+            let stacks_node = self.stacks_node();
+            peg_queue.poll(stacks_node).await?;
             self.process_queue().await?;
 
             tokio::time::sleep(Duration::from_secs(polling_interval)).await;
@@ -127,9 +129,10 @@ pub trait Coordinator: Sized + Send {
     }
 
     async fn process_queue(&mut self) -> Result<()> {
-        let peg_queue = self.peg_queue();
         loop {
-            match peg_queue.sbtc_op()? {
+            let peg_queue = self.peg_queue();
+
+            match peg_queue.sbtc_op().await? {
                 Some(SbtcOp::PegIn(op)) => {
                     debug!("Processing peg in request: {:?}", op);
                     self.peg_in(op)?;
@@ -172,12 +175,14 @@ trait CoordinatorHelpers: Coordinator {
         Ok(())
     }
 
-    async fn fulfill_peg_out(&mut self, op: &stacks_node::PegOutRequestOp) -> Result<BitcoinTransaction> {
+    async fn fulfill_peg_out(
+        &mut self,
+        op: &stacks_node::PegOutRequestOp,
+    ) -> Result<BitcoinTransaction> {
         // Retreive the utxos
         let address = self.fee_wallet().bitcoin().address();
         let btc_node = self.bitcoin_node();
-        let utxos = btc_node
-            .list_unspent(address).await?;
+        let utxos = btc_node.list_unspent(address).await?;
 
         // Build unsigned fulfilled peg out transaction
         let (mut tx, prevouts) = self.fee_wallet().bitcoin().fulfill_peg_out(op, utxos)?;
@@ -194,7 +199,8 @@ trait CoordinatorHelpers: Coordinator {
                 .map_err(Error::SigningError)?;
             let (_frost_sig, schnorr_proof) = self
                 .frost_coordinator_mut()
-                .sign_message(&taproot_sighash.as_hash()).await?;
+                .sign_message(&taproot_sighash.as_hash())
+                .await?;
 
             debug!(
                 "Fulfill Tx {:?} SchnorrProof ({},{})",
@@ -275,13 +281,19 @@ pub struct StacksCoordinator {
 
 impl StacksCoordinator {
     pub async fn run_dkg_round(&mut self) -> Result<XOnlyPublicKey> {
-        let p = self.frost_coordinator.run_distributed_key_generation().await?;
+        let p = self
+            .frost_coordinator
+            .run_distributed_key_generation()
+            .await?;
         XOnlyPublicKey::from_slice(&p.x().to_bytes())
             .map_err(|e| Error::InvalidPublicKey(e.to_string()))
     }
 
     pub async fn sign_message(&mut self, message: &str) -> Result<(Signature, SchnorrProof)> {
-        Ok(self.frost_coordinator.sign_message(message.as_bytes()).await?)
+        Ok(self
+            .frost_coordinator
+            .sign_message(message.as_bytes())
+            .await?)
     }
 }
 
@@ -452,7 +464,7 @@ async fn load_dkg_data(
     }
 }
 
-async fn config_to_stacks_coordinator(config: &Config) -> Result<StacksCoordinator> {
+pub async fn config_to_stacks_coordinator(config: &Config) -> Result<StacksCoordinator> {
     info!("Initializing stacks coordinator...");
     let mut local_stacks_node = NodeClient::new(
         config.stacks_node_rpc_url.clone(),
@@ -479,21 +491,24 @@ async fn config_to_stacks_coordinator(config: &Config) -> Result<StacksCoordinat
         &mut local_stacks_node,
         &stacks_wallet,
         &config.stacks_address,
-    ).await?;
+    )
+    .await?;
     let bitcoin_wallet = BitcoinWallet::new(xonly_pubkey, config.bitcoin_network);
 
     // Load the bitcoin wallet
     let local_bitcoin_node = LocalhostBitcoinNode::new(config.bitcoin_node_rpc_url.clone());
-    local_bitcoin_node.load_wallet(bitcoin_wallet.address()).await?;
+    local_bitcoin_node
+        .load_wallet(bitcoin_wallet.address())
+        .await?;
 
     // If a user has not specified a start block height, begin from the current burn block height by default
     let start_block_height = config.start_block_height;
     let current_block_height = local_stacks_node.burn_block_height()?;
     let local_peg_queue = if let Some(path) = &config.data_directory {
         let db_path = PathBuf::from(path).join("peg_queue.sqlite");
-        SqlitePegQueue::new(db_path, start_block_height, current_block_height)
+        SqlitePegQueue::new(db_path, start_block_height, current_block_height).await
     } else {
-        SqlitePegQueue::in_memory(start_block_height, current_block_height)
+        SqlitePegQueue::in_memory(start_block_height, current_block_height).await
     }?;
 
     Ok(StacksCoordinator {
@@ -550,7 +565,7 @@ impl Coordinator for StacksCoordinator {
 #[cfg(test)]
 mod tests {
     use crate::config::{Config, RawConfig};
-    use crate::coordinator::{CoordinatorHelpers, StacksCoordinator};
+    use crate::coordinator::{config_to_stacks_coordinator, CoordinatorHelpers};
     use crate::stacks_node::PegOutRequestOp;
     use bitcoin::consensus::Encodable;
     use blockstack_lib::burnchains::Txid;
@@ -558,8 +573,8 @@ mod tests {
     use blockstack_lib::types::chainstate::BurnchainHeaderHash;
 
     #[ignore]
-    #[test]
-    fn btc_fulfill_peg_out() {
+    #[tokio::test]
+    async fn btc_fulfill_peg_out() {
         let raw_config = RawConfig {
             signer_config_path: Some("conf/signer.toml".to_string()),
             transaction_fee: 10,
@@ -567,7 +582,7 @@ mod tests {
         };
         let config = Config::try_from(raw_config).unwrap();
         // todo: make StacksCoordinator with mock FrostCoordinator to locally generate PublicKey and Signature for unit test
-        let mut sc = StacksCoordinator::try_from(&config).unwrap();
+        let mut sc = config_to_stacks_coordinator(&config).await.unwrap();
         let recipient = PoxAddress::Addr20(false, PoxAddressType20::P2WPKH, [0; 20]);
         let peg_wallet_address = PoxAddress::Addr20(false, PoxAddressType20::P2WPKH, [0; 20]);
         let op = PegOutRequestOp {
@@ -582,7 +597,7 @@ mod tests {
             block_height: 0,
             burn_header_hash: BurnchainHeaderHash([0; 32]),
         };
-        let btc_tx_result = sc.fulfill_peg_out(&op);
+        let btc_tx_result = sc.fulfill_peg_out(&op).await;
         assert!(btc_tx_result.is_ok());
         let btc_tx = btc_tx_result.unwrap();
         let mut btc_tx_encoded: Vec<u8> = vec![];

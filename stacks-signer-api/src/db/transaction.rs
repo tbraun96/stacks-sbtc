@@ -120,8 +120,7 @@ pub async fn get_transaction_by_id(txid: &str, pool: &SqlitePool) -> Result<Tran
     let transaction_debit_address =
         TransactionAddress::Bitcoin(row.transaction_debit_address.clone());
 
-    let transaction_credit_address =
-        TransactionAddress::Bitcoin(row.transaction_credit_address.clone());
+    let transaction_credit_address = TransactionAddress::Bitcoin(row.transaction_credit_address);
 
     Ok(Transaction {
         txid,

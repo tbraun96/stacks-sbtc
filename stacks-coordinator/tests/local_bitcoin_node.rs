@@ -12,8 +12,8 @@ use test_utils::{
     SignerHelper,
 };
 
-#[test]
-fn should_broadcast_transaction() {
+#[tokio::test]
+async fn should_broadcast_transaction() {
     let btcd = BitcoinProcess::new();
     let local_btc_node = LocalhostBitcoinNode::new(btcd.url().clone());
 
@@ -70,7 +70,10 @@ fn should_broadcast_transaction() {
     );
 
     // Attempt to broadcast the deposit transaction
-    let deposit_txid = local_btc_node.broadcast_transaction(&deposit_tx).unwrap();
+    let deposit_txid = local_btc_node
+        .broadcast_transaction(&deposit_tx)
+        .await
+        .unwrap();
     // Ensure it was successfully broadcast
     assert!(get_raw_transaction(&btcd, &deposit_txid, None).is_ok());
 
@@ -97,13 +100,14 @@ fn should_broadcast_transaction() {
     // Attempt to broadcast the withdrawal transaction
     let withdrawal_txid = local_btc_node
         .broadcast_transaction(&withdrawal_tx)
+        .await
         .unwrap();
     // Ensure it was broadcast correctly
     assert!(get_raw_transaction(&btcd, &withdrawal_txid, None).is_ok());
 }
 
-#[test]
-fn should_load_wallet() {
+#[tokio::test]
+async fn should_load_wallet() {
     let btcd = BitcoinProcess::new();
     let (_, _, _, xonly_pubkey, address, _) = generate_wallet(true);
     dbg!("address: {}", &address);
@@ -111,7 +115,7 @@ fn should_load_wallet() {
 
     // Attemp to register the address with the wallet
     let local_btc_node = LocalhostBitcoinNode::new(btcd.url().clone());
-    local_btc_node.load_wallet(wallet.address()).unwrap();
+    local_btc_node.load_wallet(wallet.address()).await.unwrap();
     let result = btcd.rpc("listreceivedbyaddress", (0, true, true));
 
     // Check that the address was registered
@@ -135,8 +139,8 @@ fn should_load_wallet() {
     assert!(address_found);
 }
 
-#[test]
-fn should_list_unspent() {
+#[tokio::test]
+async fn should_list_unspent() {
     let btcd = BitcoinProcess::new();
 
     let (_, _, _, xonly_pubkey, _, _) = generate_wallet(true);
@@ -144,14 +148,14 @@ fn should_list_unspent() {
     let wallet = BitcoinWallet::new(xonly_pubkey, Network::Regtest);
 
     let local_btc_node = LocalhostBitcoinNode::new(btcd.url().clone());
-    local_btc_node.load_wallet(wallet.address()).unwrap();
+    local_btc_node.load_wallet(wallet.address()).await.unwrap();
 
     // Produce some UTXOs for the address
     let _ = mine_and_get_coinbase_txid(&btcd, wallet.address());
     // Produce more blocks to make sure the UTXOs are confirmed
     let _ = mine_and_get_coinbase_txid(&btcd, &wallet.address());
 
-    let utxos = local_btc_node.list_unspent(wallet.address()).unwrap();
+    let utxos = local_btc_node.list_unspent(wallet.address()).await.unwrap();
 
     assert!(!utxos.is_empty());
 }

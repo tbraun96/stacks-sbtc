@@ -14,8 +14,7 @@ blockstack-core = { workspace = true }
 clap = { workspace = true }
 frost-coordinator = { path = "../frost-coordinator" }
 frost-signer = { path = "../frost-signer" }
-rusqlite.workspace = true
-tokio-rusqlite = "0.4.0"
+sqlx = { version = "0.5", features = ["sqlite", "runtime-tokio-native-tls", "offline"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 stacks-signer = { path = "../stacks-signer" }

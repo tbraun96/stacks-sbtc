@@ -1,12 +1,12 @@
 use std::{borrow::Cow, str::FromStr};
 
+use async_trait::async_trait;
 use bdk::descriptor::calc_checksum;
 use bitcoin::{consensus::Encodable, hashes::sha256d::Hash, util::amount::Amount, Txid};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, info, warn};
 use url::Url;
-use async_trait::async_trait;
 
 #[async_trait]
 pub trait BitcoinNode {
@@ -82,7 +82,8 @@ impl BitcoinNode for LocalhostBitcoinNode {
         let raw_tx = hex::encode(&tx_bytes);
 
         let result = self
-            .call("sendrawtransaction", [&raw_tx]).await?
+            .call("sendrawtransaction", [&raw_tx])
+            .await?
             .as_str()
             .ok_or(Error::InvalidResponseJSON(
                 "No transaction hash in sendrawtransaction response".to_string(),
@@ -144,11 +145,7 @@ impl LocalhostBitcoinNode {
     }
 
     /// Make the Bitcoin RPC method call with the corresponding paramenters
-    async fn call(
-        &self,
-        method: &str,
-        params: impl Serialize,
-    ) -> Result<serde_json::Value, Error> {
+    async fn call(&self, method: &str, params: impl Serialize) -> Result<serde_json::Value, Error> {
         self.call_path(method, params, None).await
     }
 
@@ -162,7 +159,8 @@ impl LocalhostBitcoinNode {
             method,
             params,
             Some(&format!("/wallet/{}", self.wallet_name)),
-        ).await
+        )
+        .await
     }
 
     /// Make the Bitcoin RPC method call against the specified path with the corresponding paramenters
@@ -182,7 +180,8 @@ impl LocalhostBitcoinNode {
             Cow::Borrowed(&self.bitcoind_api)
         };
 
-        let response = reqwest::Client::new().post(&url.to_string())
+        let response = reqwest::Client::new()
+            .post(&url.to_string())
             .json(&json_rpc)
             .send()
             .await?;
@@ -329,7 +328,7 @@ impl LocalhostBitcoinNode {
 }
 
 fn parse_rpc_error(err: reqwest::Error) -> String {
-    format!("{} {}", err.status().unwrap_or_default(), err.to_string())
+    format!("{} {}", err.status().unwrap_or_default(), err)
 }
 
 #[cfg(test)]

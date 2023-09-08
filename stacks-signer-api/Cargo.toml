@@ -13,7 +13,7 @@ secp256k1.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_urlencoded = "0.7"
-rusqlite.workspace = true
+sqlx = { version = "0.5", features = ["sqlite", "runtime-tokio-native-tls", "offline"] }
 tokio = { version = "1.28.1", features = ["macros", "rt-multi-thread"] }
 toml.workspace = true
 thiserror.workspace = true

@@ -50,7 +50,7 @@ pub enum Error {
 }
 
 #[cfg_attr(test, mockall::automock)]
-pub trait StacksNode {
+pub trait StacksNode: Send + Sync {
     fn get_peg_in_ops(&self, block_height: u64) -> Result<Vec<PegInOp>, Error>;
     fn get_peg_out_request_ops(&self, block_height: u64) -> Result<Vec<PegOutRequestOp>, Error>;
     fn burn_block_height(&self) -> Result<u64, Error>;
