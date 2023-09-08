@@ -50,17 +50,24 @@ pub enum Error {
 }
 
 #[cfg_attr(test, mockall::automock)]
+#[async_trait::async_trait]
 pub trait StacksNode: Send + Sync {
-    fn get_peg_in_ops(&self, block_height: u64) -> Result<Vec<PegInOp>, Error>;
-    fn get_peg_out_request_ops(&self, block_height: u64) -> Result<Vec<PegOutRequestOp>, Error>;
-    fn burn_block_height(&self) -> Result<u64, Error>;
-    fn next_nonce(&mut self, addr: &StacksAddress) -> Result<u64, Error>;
-    fn broadcast_transaction(&self, tx: &StacksTransaction) -> Result<(), Error>;
-    fn keys_threshold(&self, sender: &StacksAddress) -> Result<u128, Error>;
-    fn public_keys(&self, sender: &StacksAddress) -> Result<PublicKeys, Error>;
-    fn signer_key_ids(&self, sender: &StacksAddress) -> Result<SignerKeyIds, Error>;
-    fn coordinator_public_key(&self, sender: &StacksAddress) -> Result<Option<PublicKey>, Error>;
-    fn bitcoin_wallet_public_key(
+    async fn get_peg_in_ops(&self, block_height: u64) -> Result<Vec<PegInOp>, Error>;
+    async fn get_peg_out_request_ops(
+        &self,
+        block_height: u64,
+    ) -> Result<Vec<PegOutRequestOp>, Error>;
+    async fn burn_block_height(&self) -> Result<u64, Error>;
+    async fn next_nonce(&mut self, addr: &StacksAddress) -> Result<u64, Error>;
+    async fn broadcast_transaction(&self, tx: &StacksTransaction) -> Result<(), Error>;
+    async fn keys_threshold(&self, sender: &StacksAddress) -> Result<u128, Error>;
+    async fn public_keys(&self, sender: &StacksAddress) -> Result<PublicKeys, Error>;
+    async fn signer_key_ids(&self, sender: &StacksAddress) -> Result<SignerKeyIds, Error>;
+    async fn coordinator_public_key(
+        &self,
+        sender: &StacksAddress,
+    ) -> Result<Option<PublicKey>, Error>;
+    async fn bitcoin_wallet_public_key(
         &self,
         sender: &StacksAddress,
     ) -> Result<Option<XOnlyPublicKey>, Error>;

@@ -98,7 +98,7 @@ impl SqlitePegQueue {
         stacks_node: &N,
         block_height: u64,
     ) -> Result<(), PegQueueError> {
-        match stacks_node.get_peg_in_ops(block_height) {
+        match stacks_node.get_peg_in_ops(block_height).await {
             Err(StacksNodeError::UnknownBlockHeight(height)) => {
                 debug!("Failed to find burn block height {}", height);
             }
@@ -118,7 +118,7 @@ impl SqlitePegQueue {
         stacks_node: &N,
         block_height: u64,
     ) -> Result<(), PegQueueError> {
-        match stacks_node.get_peg_out_request_ops(block_height) {
+        match stacks_node.get_peg_out_request_ops(block_height).await {
             Err(StacksNodeError::UnknownBlockHeight(height)) => {
                 debug!("Failed to find burn block height {}", height);
             }
@@ -269,7 +269,7 @@ impl PegQueue for SqlitePegQueue {
     }
 
     async fn poll<N: StacksNode>(&self, stacks_node: &N) -> Result<(), PegQueueError> {
-        let target_block_height = stacks_node.burn_block_height()?;
+        let target_block_height = stacks_node.burn_block_height().await?;
         let start_block_height = self
             .last_processed_block_height()
             .await
@@ -411,7 +411,7 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn calling_sbtc_op_should_return_new_peg_ops() {
         let peg_queue = SqlitePegQueue::in_memory(Some(1), 2).await.unwrap();
         let number_of_simulated_blocks: u64 = 3;
@@ -435,7 +435,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn calling_poll_should_not_query_new_ops_if_at_block_height() {
         let peg_queue = SqlitePegQueue::in_memory(Some(1), 2).await.unwrap();
         let number_of_simulated_blocks: u64 = 3;
@@ -461,7 +461,7 @@ mod tests {
         peg_queue.poll(&stacks_node_mock).await.unwrap();
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn calling_poll_should_find_new_ops_if_at_new_block_height() {
         let peg_queue = SqlitePegQueue::in_memory(Some(1), 2).await.unwrap();
         let number_of_simulated_blocks: u64 = 3;
@@ -490,7 +490,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn acknowledged_entries_should_have_acknowledge_status() {
         let peg_queue = SqlitePegQueue::in_memory(Some(1), 2).await.unwrap();
         let number_of_simulated_blocks: u64 = 1;
@@ -513,7 +513,7 @@ mod tests {
         assert_eq!(entry.status, Status::Acknowledged);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn should_start_at_last_observed_block_height_when_polling() {
         let start_block_height: u64 = 10;
         let initial_node_block_height: u64 = 20;

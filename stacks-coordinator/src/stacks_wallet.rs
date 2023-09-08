@@ -143,7 +143,7 @@ impl StacksWallet {
 }
 
 /// Build a StacksTransaction using the provided wallet and nonce
-pub trait BuildStacksTransaction {
+pub trait BuildStacksTransaction: Send + Sync {
     fn build_transaction(
         &self,
         wallet: &StacksWallet,

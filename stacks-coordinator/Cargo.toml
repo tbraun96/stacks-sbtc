@@ -30,7 +30,7 @@ url = { workspace = true }
 async-trait = { workspace = true }
 bdk.workspace = true
 hex.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "rt"]}
 
 [dev-dependencies]
 mockall = { workspace = true }

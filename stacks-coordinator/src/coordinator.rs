@@ -135,7 +135,7 @@ pub trait Coordinator: Sized + Send {
             match peg_queue.sbtc_op().await? {
                 Some(SbtcOp::PegIn(op)) => {
                     debug!("Processing peg in request: {:?}", op);
-                    self.peg_in(op)?;
+                    self.peg_in(op).await?;
                 }
                 Some(SbtcOp::PegOutRequest(op)) => {
                     debug!("Processing peg out request: {:?}", op);
@@ -150,9 +150,9 @@ pub trait Coordinator: Sized + Send {
 // Private helper functions
 #[async_trait]
 trait CoordinatorHelpers: Coordinator {
-    fn peg_in(&mut self, op: stacks_node::PegInOp) -> Result<()> {
+    async fn peg_in(&mut self, op: stacks_node::PegInOp) -> Result<()> {
         // Build a transaction from the peg in op and broadcast it to the node with reattempts
-        self.try_broadcast_transaction(&op)
+        self.try_broadcast_transaction(&op).await
     }
 
     async fn peg_out(&mut self, op: stacks_node::PegOutRequestOp) -> Result<()> {
@@ -163,7 +163,7 @@ trait CoordinatorHelpers: Coordinator {
         let fulfill_tx = self.fulfill_peg_out(&op).await?;
 
         // Build a transaction from the peg out request op and broadcast it to the node with reattempts
-        self.try_broadcast_transaction(&op)?;
+        self.try_broadcast_transaction(&op).await?;
 
         // Broadcast the BTC transaction to the Bitcoin node
         let btc_node = self.bitcoin_node();
@@ -218,18 +218,18 @@ trait CoordinatorHelpers: Coordinator {
     }
 
     /// Broadcast a transaction to the stacks node, retrying if the nonce is rejected or the fee set too low until a retry limit is reached
-    fn try_broadcast_transaction<T: BuildStacksTransaction>(&mut self, op: &T) -> Result<()> {
+    async fn try_broadcast_transaction<T: BuildStacksTransaction>(&mut self, op: &T) -> Result<()> {
         // Retrieve the nonce from the stacks node using the sBTC wallet address
         let address = *self.fee_wallet().stacks().address();
-        let mut nonce = self.stacks_node_mut().next_nonce(&address)?;
+        let mut nonce = self.stacks_node_mut().next_nonce(&address).await?;
         let mut nonce_retries = 0;
         let mut fee_retries = 0;
         loop {
             // Build a transaction using the peg in op and calculated nonce
             let tx = self.fee_wallet().stacks().build_transaction(op, nonce)?;
-
+            let stacks_node = self.stacks_node();
             // Broadcast the resulting sBTC transaction to the stacks node
-            match self.stacks_node().broadcast_transaction(&tx) {
+            match stacks_node.broadcast_transaction(&tx).await {
                 Err(StacksNodeError::BroadcastError(BroadcastError::ConflictingNonceInMempool)) => {
                     warn!("Transaction rejected by stacks node due to conflicting nonce in mempool. Stacks node may be falling behind!");
                     nonce_retries += 1;
@@ -237,7 +237,7 @@ trait CoordinatorHelpers: Coordinator {
                         return Err(Error::MaxNonceRetriesExceeded);
                     }
                     warn!("Incrementing nonce and retrying...");
-                    nonce = self.stacks_node_mut().next_nonce(&address)?;
+                    nonce = self.stacks_node_mut().next_nonce(&address).await?;
                 }
                 Err(StacksNodeError::BroadcastError(BroadcastError::FeeTooLow(
                     expected,
@@ -297,7 +297,7 @@ impl StacksCoordinator {
     }
 }
 
-fn create_frost_coordinator_from_path(
+async fn create_frost_coordinator_from_path(
     signer_config_path: &str,
     config: &Config,
     stacks_node: &mut NodeClient,
@@ -312,19 +312,21 @@ fn create_frost_coordinator_from_path(
     })?;
 
     // Make sure this coordinator data was loaded into the sbtc contract correctly
-    let coordinator_data_loaded =
-        if let Some(public_key) = stacks_node.coordinator_public_key(&config.stacks_address)? {
-            public_key.to_bytes() == coordinator.public_key().to_bytes()
-        } else {
-            false
-        };
+    let coordinator_data_loaded = if let Some(public_key) = stacks_node
+        .coordinator_public_key(&config.stacks_address)
+        .await?
+    {
+        public_key.to_bytes() == coordinator.public_key().to_bytes()
+    } else {
+        false
+    };
     if !coordinator_data_loaded {
         // Load the coordinator data into the sbtc contract
         // TODO: load all contract info into the contract from a file, not just the coordinator data
         // so that subsequent runs of the coordinator don't need to load the data from a file again
         // until a stacking cyle has finished and a new signing set and coordinator are generated.
         debug!("loading coordinator data into sBTC contract...");
-        let nonce = stacks_node.next_nonce(&config.stacks_address)?;
+        let nonce = stacks_node.next_nonce(&config.stacks_address).await?;
         let coordinator_public_key =
             Secp256k1PublicKey::from_slice(&coordinator.public_key().to_bytes())
                 .map_err(|e| Error::InvalidPublicKey(e.to_string()))?;
@@ -333,22 +335,23 @@ fn create_frost_coordinator_from_path(
             &coordinator_public_key,
             nonce,
         )?;
-        stacks_node.broadcast_transaction(&coordinator_tx)?;
+        stacks_node.broadcast_transaction(&coordinator_tx).await?;
     }
     Ok(coordinator)
 }
 
-fn create_frost_coordinator_from_contract(
+async fn create_frost_coordinator_from_contract(
     config: &Config,
     stacks_node: &mut NodeClient,
 ) -> Result<FrostCoordinator> {
     debug!("Creating frost coordinator from stacks node...");
-    let keys_threshold = stacks_node.keys_threshold(&config.stacks_address)?;
+    let keys_threshold = stacks_node.keys_threshold(&config.stacks_address).await?;
     let coordinator_public_key = stacks_node
-        .coordinator_public_key(&config.stacks_address)?
+        .coordinator_public_key(&config.stacks_address)
+        .await?
         .ok_or_else(|| Error::NoCoordinator)?;
-    let public_keys = stacks_node.public_keys(&config.stacks_address)?;
-    let signer_key_ids = stacks_node.signer_key_ids(&config.stacks_address)?;
+    let public_keys = stacks_node.public_keys(&config.stacks_address).await?;
+    let signer_key_ids = stacks_node.signer_key_ids(&config.stacks_address).await?;
     let network_private_key = Scalar::try_from(
         config
             .network_private_key
@@ -369,7 +372,7 @@ fn create_frost_coordinator_from_contract(
     .map_err(|e| Error::ConfigError(e.to_string()))
 }
 
-fn create_frost_coordinator(
+async fn create_frost_coordinator(
     config: &Config,
     stacks_node: &mut NodeClient,
     stacks_wallet: &StacksWallet,
@@ -379,8 +382,9 @@ fn create_frost_coordinator(
     // Note: all errors returned from create_coordinator relate to configuration issues and should convert to this error type.
     if let Some(signer_config_path) = &config.signer_config_path {
         create_frost_coordinator_from_path(signer_config_path, config, stacks_node, stacks_wallet)
+            .await
     } else {
-        create_frost_coordinator_from_contract(config, stacks_node)
+        create_frost_coordinator_from_contract(config, stacks_node).await
     }
 }
 
@@ -434,7 +438,7 @@ async fn load_dkg_data(
     address: &StacksAddress,
 ) -> Result<XOnlyPublicKey> {
     debug!("Retrieving bitcoin wallet public key from sBTC contract...");
-    if let Some(xonly_pubkey) = stacks_node.bitcoin_wallet_public_key(address)? {
+    if let Some(xonly_pubkey) = stacks_node.bitcoin_wallet_public_key(address).await? {
         if let Some(data_directory) = data_directory {
             frost_coordinator.set_dkg_public_shares(read_dkg_public_shares(data_directory)?);
         }
@@ -456,10 +460,10 @@ async fn load_dkg_data(
             .map_err(|e| Error::InvalidPublicKey(e.to_string()))?;
 
         // Set the bitcoin address using the sbtc contract
-        let nonce = stacks_node.next_nonce(address)?;
+        let nonce = stacks_node.next_nonce(address).await?;
         let tx =
             stacks_wallet.build_set_bitcoin_wallet_public_key_transaction(&xonly_pubkey, nonce)?;
-        stacks_node.broadcast_transaction(&tx)?;
+        stacks_node.broadcast_transaction(&tx).await?;
         Ok(xonly_pubkey)
     }
 }
@@ -482,7 +486,7 @@ pub async fn config_to_stacks_coordinator(config: &Config) -> Result<StacksCoord
     );
 
     let mut frost_coordinator =
-        create_frost_coordinator(config, &mut local_stacks_node, &stacks_wallet)?;
+        create_frost_coordinator(config, &mut local_stacks_node, &stacks_wallet).await?;
 
     // Load the public key from either the frost_coordinator or the sBTC contract
     let xonly_pubkey = load_dkg_data(
@@ -503,7 +507,7 @@ pub async fn config_to_stacks_coordinator(config: &Config) -> Result<StacksCoord
 
     // If a user has not specified a start block height, begin from the current burn block height by default
     let start_block_height = config.start_block_height;
-    let current_block_height = local_stacks_node.burn_block_height()?;
+    let current_block_height = local_stacks_node.burn_block_height().await?;
     let local_peg_queue = if let Some(path) = &config.data_directory {
         let db_path = PathBuf::from(path).join("peg_queue.sqlite");
         SqlitePegQueue::new(db_path, start_block_height, current_block_height).await
