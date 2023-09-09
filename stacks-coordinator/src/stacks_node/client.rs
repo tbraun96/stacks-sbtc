@@ -449,8 +449,8 @@ impl StacksNode for NodeClient {
 #[cfg(test)]
 mod tests {
     use std::{
-        io::{BufWriter, Read, Write},
-        net::{SocketAddr, TcpListener},
+        io::{BufWriter, Write},
+        net::SocketAddr,
     };
 
     use blockstack_lib::{
@@ -464,6 +464,8 @@ mod tests {
         types::chainstate::{StacksPrivateKey, StacksPublicKey},
         util::{hash::Hash160, secp256k1::MessageSignature},
     };
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
     use crate::util::test::PRIVATE_KEY_HEX;
 
@@ -476,7 +478,7 @@ mod tests {
     }
 
     impl TestConfig {
-        pub fn new() -> Self {
+        pub async fn new() -> Self {
             let sender_key = StacksPrivateKey::from_hex(PRIVATE_KEY_HEX)
                 .expect("Unable to generate stacks private key from hex string");
 
@@ -491,7 +493,7 @@ mod tests {
             .expect("Failed to generate address from private key");
 
             let mut mock_server_addr = SocketAddr::from(([127, 0, 0, 1], 0));
-            let mock_server = TcpListener::bind(mock_server_addr).unwrap();
+            let mock_server = TcpListener::bind(mock_server_addr).await.unwrap();
 
             mock_server_addr.set_port(mock_server.local_addr().unwrap().port());
             let client = NodeClient::new(
@@ -508,20 +510,20 @@ mod tests {
         }
     }
 
-    fn write_response(mock_server: TcpListener, bytes: &[u8]) -> [u8; 1024] {
+    async fn write_response(mock_server: TcpListener, bytes: &[u8]) -> [u8; 1024] {
         let mut request_bytes = [0u8; 1024];
         {
-            let mut stream = mock_server.accept().unwrap().0;
+            let mut stream = mock_server.accept().await.unwrap().0;
 
-            stream.read(&mut request_bytes).unwrap();
-            stream.write(bytes).unwrap();
+            stream.read(&mut request_bytes).await.unwrap();
+            stream.write(bytes).await.unwrap();
         }
         request_bytes
     }
 
     #[tokio::test]
     async fn call_read_success_test() {
-        let config = TestConfig::new();
+        let config = TestConfig::new().await;
         let h = tokio::task::spawn(async move {
             config
                 .client
@@ -531,14 +533,15 @@ mod tests {
         write_response(
             config.mock_server,
             b"HTTP/1.1 200 OK\n\n{\"okay\":true,\"result\":\"0x070d0000000473425443\"}",
-        );
+        )
+        .await;
         let result = h.await.unwrap().unwrap();
         assert_eq!(result, "0x070d0000000473425443");
     }
 
     #[tokio::test]
     async fn call_read_failure_test() {
-        let config = TestConfig::new();
+        let config = TestConfig::new().await;
         let h = tokio::task::spawn(async move {
             config
                 .client
@@ -548,14 +551,15 @@ mod tests {
         write_response(
             config.mock_server,
             b"HTTP/1.1 200 OK\n\n{\"okay\":false,\"cause\":\"Some reason\"}",
-        );
+        )
+        .await;
         let result = h.await.unwrap();
         assert!(matches!(result, Err(StacksNodeError::ReadOnlyFailure(_))));
     }
 
     #[tokio::test]
     async fn signer_data_none_test() {
-        let config = TestConfig::new();
+        let config = TestConfig::new().await;
 
         let h = tokio::task::spawn(async move {
             let mut public_keys = PublicKeys::default();
@@ -568,33 +572,35 @@ mod tests {
         write_response(
             config.mock_server,
             b"HTTP/1.1 200 OK\n\n{\"okay\":true,\"result\":\"0x09\"}",
-        );
+        )
+        .await;
         let result = h.await.unwrap();
         assert!(matches!(result, Err(StacksNodeError::NoSignerData(_))));
     }
 
     #[tokio::test]
     async fn keys_threshold_test() {
-        let config = TestConfig::new();
+        let config = TestConfig::new().await;
 
         let h =
             tokio::task::spawn(async move { config.client.keys_threshold(&config.sender).await });
 
-        write_response(config.mock_server, b"HTTP/1.1 200 OK\n\n{\"okay\":true,\"result\":\"0x0100000000000000000000000000000af0\"}");
+        write_response(config.mock_server, b"HTTP/1.1 200 OK\n\n{\"okay\":true,\"result\":\"0x0100000000000000000000000000000af0\"}").await;
         let result = h.await.unwrap().unwrap();
         assert_eq!(result, 2800);
     }
 
     #[tokio::test]
     async fn keys_threshold_invalid_test() {
-        let config = TestConfig::new();
+        let config = TestConfig::new().await;
 
         let h =
             tokio::task::spawn(async move { config.client.keys_threshold(&config.sender).await });
         write_response(
             config.mock_server,
             b"HTTP/1.1 200 OK\n\n{\"okay\":true,\"result\":\"0x09\"}",
-        );
+        )
+        .await;
         let result = h.await.unwrap();
         assert!(matches!(
             result,
@@ -604,25 +610,26 @@ mod tests {
 
     #[tokio::test]
     async fn num_signers_test() {
-        let config = TestConfig::new();
+        let config = TestConfig::new().await;
 
         let h = tokio::task::spawn(async move { config.client.num_signers(&config.sender).await });
         write_response(config.mock_server,
                     b"HTTP/1.1 200 OK\n\n{\"okay\":true,\"result\":\"0x0100000000000000000000000000000fa0\"}"
-                );
+                ).await;
         let result = h.await.unwrap().unwrap();
         assert_eq!(result, 4000);
     }
 
     #[tokio::test]
     async fn num_signers_invalid_test() {
-        let config = TestConfig::new();
+        let config = TestConfig::new().await;
 
         let h = tokio::task::spawn(async move { config.client.num_signers(&config.sender).await });
         write_response(
             config.mock_server,
             b"HTTP/1.1 200 OK\n\n{\"okay\":true,\"result\":\"0x09\"}",
-        );
+        )
+        .await;
         let result = h.await.unwrap();
         assert!(matches!(
             result,
@@ -632,7 +639,7 @@ mod tests {
 
     #[tokio::test]
     async fn next_nonce_success_test() {
-        let mut config = TestConfig::new();
+        let mut config = TestConfig::new().await;
 
         let h = tokio::task::spawn(async move {
             let nonce = config.client.next_nonce(&config.sender).await.unwrap();
@@ -641,7 +648,7 @@ mod tests {
         });
         write_response(config.mock_server,
                     b"HTTP/1.1 200 OK\n\n{\"balance\":\"0x00000000000000000000000000000000\",\"locked\":\"0x00000000000000000000000000000000\",\"unlock_height\":0,\"nonce\":20,\"balance_proof\":\"\",\"nonce_proof\":\"\"}"
-                );
+                ).await;
         let (nonce, next_nonce) = h.await.unwrap();
         assert_eq!(nonce, 20);
         assert_eq!(next_nonce, 21);
@@ -649,46 +656,49 @@ mod tests {
 
     #[tokio::test]
     async fn next_nonce_failure_test() {
-        let mut config = TestConfig::new();
+        let mut config = TestConfig::new().await;
 
         let h = tokio::task::spawn(async move { config.client.next_nonce(&config.sender).await });
         write_response(
             config.mock_server,
             b"HTTP/1.1 404 Not Found\n\n/v2/accounts/SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE",
-        );
+        )
+        .await;
         let result = h.await.unwrap();
         assert!(matches!(result, Err(StacksNodeError::UnknownAddress(_))));
     }
 
     #[tokio::test]
     async fn burn_block_height_success_test() {
-        let config = TestConfig::new();
+        let config = TestConfig::new().await;
 
         let h = tokio::task::spawn(async move { config.client.burn_block_height().await });
         write_response(
             config.mock_server,
             b"HTTP/1.1 200 OK\n\n{\"peer_version\":420759911,\"burn_block_height\":2430220}",
-        );
+        )
+        .await;
         let result = h.await.unwrap().unwrap();
         assert_eq!(result, 2430220);
     }
 
     #[tokio::test]
     async fn burn_block_height_failure_test() {
-        let config = TestConfig::new();
+        let config = TestConfig::new().await;
 
         let h = tokio::task::spawn(async move { config.client.burn_block_height().await });
         write_response(
             config.mock_server,
             b"HTTP/1.1 200 OK\n\n{\"peer_version\":420759911,\"burn_block_height2\":2430220}",
-        );
+        )
+        .await;
         let result = h.await.unwrap();
         assert!(matches!(result, Err(StacksNodeError::InvalidJsonEntry(_))));
     }
 
     #[tokio::test]
     async fn should_send_tx_bytes_to_node() {
-        let config = TestConfig::new();
+        let config = TestConfig::new().await;
         let tx = StacksTransaction {
             version: TransactionVersion::Testnet,
             chain_id: 0,
@@ -726,7 +736,7 @@ mod tests {
 
         let h = tokio::task::spawn(async move { config.client.broadcast_transaction(&tx).await });
 
-        let request_bytes = write_response(config.mock_server, b"HTTP/1.1 200 OK\n\n");
+        let request_bytes = write_response(config.mock_server, b"HTTP/1.1 200 OK\n\n").await;
         h.await.unwrap().unwrap();
 
         assert!(
