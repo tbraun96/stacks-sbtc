@@ -534,7 +534,7 @@ mod test {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn integration_test_frost_coordinator_should_be_able_to_successfully_run_dkg_sign() {
         let relay_url = "http://127.0.0.1:9776".to_string();
         let (coordinator_config, coordinator_net_listen) =
@@ -555,7 +555,7 @@ mod test {
             .unwrap();
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn integration_test_frost_coordinator_should_provide_valid_signatures_after_dkg() {
         let msg = vec![1, 3, 3, 7];
         let relay_url = "http://127.0.0.1:9777".to_string();
@@ -575,7 +575,7 @@ mod test {
         schnorr_proof.verify(&public_key.x(), &msg);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn integration_test_frost_coordinator_should_provide_valid_signatures_after_restart() {
         let msg = vec![1, 3, 3, 7];
         let relay_url = "http://127.0.0.1:9778".to_string();
