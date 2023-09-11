@@ -6,6 +6,7 @@ mod request;
 mod response;
 mod url;
 
+use async_trait::async_trait;
 use std::io::Error;
 
 pub use io_stream::IoStream;
@@ -16,6 +17,7 @@ pub use request::Request;
 pub use response::Response;
 pub use url::QueryEx;
 
-pub trait Call {
-    fn call(&mut self, request: Request) -> Result<Response, Error>;
+#[async_trait]
+pub trait Call: Send {
+    async fn call(&mut self, request: Request) -> Result<Response, Error>;
 }

@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "process", "macros", "rt"]}
+async-trait.workspace = true

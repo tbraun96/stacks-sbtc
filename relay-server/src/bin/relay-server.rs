@@ -1,9 +1,10 @@
 use clap::Parser;
 use relay_server::Server;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Cli::parse();
-    Server::run(&args.listen);
+    Server::run(&args.listen).await;
 }
 
 #[derive(Parser)]

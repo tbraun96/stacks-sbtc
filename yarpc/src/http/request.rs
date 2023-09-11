@@ -76,15 +76,15 @@ mod tests {
 
     use super::{Message, Request};
 
-    #[test]
-    fn test() {
+    #[tokio::test]
+    async fn test() {
         const REQUEST: &str = "\
             POST / HTTP/1.1\r\n\
             Content-Length: 6\r\n\
             \r\n\
             Hello!";
         let mut read = Cursor::new(REQUEST);
-        let rm = Request::read(&mut read).unwrap();
+        let rm = Request::read(&mut read).await.unwrap();
         assert_eq!(rm.method, POST);
         assert_eq!(rm.url, "/");
         assert_eq!(rm.protocol, "HTTP/1.1");
@@ -92,7 +92,7 @@ mod tests {
         assert_eq!(from_utf8(&rm.content), Ok("Hello!"));
         assert_eq!(read.position(), REQUEST.len() as u64);
         let mut v = Vec::default();
-        rm.write(&mut Cursor::new(&mut v)).unwrap();
+        rm.write(&mut Cursor::new(&mut v)).await.unwrap();
         const EXPECTED: &str = "\
             POST / HTTP/1.1\r\n\
             content-length:6\r\n\
@@ -101,8 +101,8 @@ mod tests {
         assert_eq!(from_utf8(&v), Ok(EXPECTED));
     }
 
-    #[test]
-    fn test_header() {
+    #[tokio::test]
+    async fn test_header() {
         const REQUEST: &str = "\
             POST / HTTP/1.1\r\n\
             Content-Length: 6\r\n\
@@ -110,7 +110,7 @@ mod tests {
             \r\n\
             Hello!";
         let mut read = Cursor::new(REQUEST);
-        let rm = Request::read(&mut read).unwrap();
+        let rm = Request::read(&mut read).await.unwrap();
         assert_eq!(rm.method, POST);
         assert_eq!(rm.url, "/");
         assert_eq!(rm.protocol, "HTTP/1.1");
@@ -119,7 +119,7 @@ mod tests {
         assert_eq!(from_utf8(&rm.content), Ok("Hello!"));
         assert_eq!(read.position(), REQUEST.len() as u64);
         let mut v = Vec::default();
-        rm.write(&mut Cursor::new(&mut v)).unwrap();
+        rm.write(&mut Cursor::new(&mut v)).await.unwrap();
         const EXPECTED: &str = "\
             POST / HTTP/1.1\r\n\
             hello:someThing\r\n\
@@ -129,43 +129,43 @@ mod tests {
         assert_eq!(from_utf8(&v), Ok(EXPECTED));
     }
 
-    #[test]
-    fn incomplete_message_test() {
+    #[tokio::test]
+    async fn incomplete_message_test() {
         const REQUEST: &str = "\
             POST / HTTP/1.1\r\n\
             Content-Leng";
         let mut read = Cursor::new(REQUEST);
-        assert!(Request::read(&mut read).is_err());
+        assert!(Request::read(&mut read).await.is_err());
     }
 
-    #[test]
-    fn incomplete_content_test() {
+    #[tokio::test]
+    async fn incomplete_content_test() {
         const REQUEST: &str = "\
             POST / HTTP/1.1\r\n\
             Content-Length: 6\r\n\
             \r\n";
         let mut read = Cursor::new(REQUEST);
-        assert!(Request::read(&mut read).is_err());
+        assert!(Request::read(&mut read).await.is_err());
     }
 
-    #[test]
-    fn invalid_message_test() {
+    #[tokio::test]
+    async fn invalid_message_test() {
         const REQUEST: &str = "\
             POST / HTTP/1.1\r\n\
             Content-Length 6\r\n\
             \r\n\
             Hello!";
         let mut read = Cursor::new(REQUEST);
-        assert!(Request::read(&mut read).is_err());
+        assert!(Request::read(&mut read).await.is_err());
     }
 
-    #[test]
-    fn no_content_test() {
+    #[tokio::test]
+    async fn no_content_test() {
         const REQUEST: &str = "\
             GET /images/logo.png HTTP/1.1\r\n\
             \r\n";
         let mut read = Cursor::new(REQUEST);
-        let rm = Request::read(&mut read).unwrap();
+        let rm = Request::read(&mut read).await.unwrap();
         assert_eq!(rm.method, GET);
         assert_eq!(rm.url, "/images/logo.png");
         assert_eq!(rm.protocol, "HTTP/1.1");
@@ -173,18 +173,18 @@ mod tests {
         assert!(rm.content.is_empty());
         assert_eq!(read.position(), REQUEST.len() as u64);
         let mut v = Vec::default();
-        rm.write(&mut Cursor::new(&mut v)).unwrap();
+        rm.write(&mut Cursor::new(&mut v)).await.unwrap();
         const EXPECTED: &str = "\
             GET /images/logo.png HTTP/1.1\r\n\
             \r\n";
         assert_eq!(from_utf8(&v), Ok(EXPECTED));
     }
 
-    #[test]
-    fn invalid_utf8_should_not_panic() {
+    #[tokio::test]
+    async fn invalid_utf8_should_not_panic() {
         const REQUEST: &[u8] = &[0xFF];
         let mut read = Cursor::new(REQUEST);
-        let rm = Request::read(&mut read);
+        let rm = Request::read(&mut read).await;
         assert!(rm.is_err());
     }
 }

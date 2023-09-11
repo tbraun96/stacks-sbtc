@@ -1,39 +1,20 @@
-use std::{
-    io::{Error, Read, Write},
-    net::TcpStream,
-};
+use async_trait::async_trait;
+use std::io::Error;
 
+use crate::http::message::{AsyncReadBuf, AsyncWriteBuf};
 use crate::http::{Call, Message, Request, Response};
 
 /// A trait for bidirectional stream.
 ///
 /// For example, `TcpStream` is a bidirectional stream.
-pub trait IoStream: Sized {
-    type Read: Read;
-    type Write: Write;
-    fn istream(&mut self) -> &mut Self::Read;
-    fn ostream(&mut self) -> &mut Self::Write;
-}
-
+pub trait IoStream: AsyncReadBuf + AsyncWriteBuf + Unpin + Send + Sync {}
+impl<T: AsyncReadBuf + AsyncWriteBuf + Unpin + Send + Sync> IoStream for T {}
+#[async_trait]
 impl<T: IoStream> Call for T {
-    fn call(&mut self, request: Request) -> Result<Response, Error> {
-        let o = self.ostream();
+    async fn call(&mut self, request: Request) -> Result<Response, Error> {
         // send data to a callee.
-        request.write(o)?;
-        // make sure we deliver all data to to the callee.
-        o.flush()?;
+        request.write(self).await?;
         // read data from the callee.
-        Response::read(self.istream())
-    }
-}
-
-impl IoStream for TcpStream {
-    type Read = TcpStream;
-    type Write = TcpStream;
-    fn istream(&mut self) -> &mut Self::Read {
-        self
-    }
-    fn ostream(&mut self) -> &mut Self::Write {
-        self
+        Response::read(self).await
     }
 }

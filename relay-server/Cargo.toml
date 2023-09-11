@@ -8,4 +8,6 @@ license = "GPLv3"
 
 [dependencies]
 yarpc = { path = "../yarpc" }
+tokio = { workspace = true, features = ["net", "macros", "rt", "time", "rt-multi-thread"]}
 clap.workspace = true
+async-trait.workspace = true

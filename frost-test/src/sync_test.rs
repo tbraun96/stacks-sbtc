@@ -4,8 +4,8 @@ mod tests {
     use relay_server::Server;
     use yarpc::http::{Call, Method, Request};
 
-    #[test]
-    fn template_test() {
+    #[tokio::test]
+    async fn template_test() {
         let mut server = Server::default();
         let _signers = [
             SigningRound::new(
@@ -52,7 +52,7 @@ mod tests {
                 Default::default(),
                 "Hello!".as_bytes().to_vec(),
             );
-            let response = server.call(request).unwrap();
+            let response = server.call(request).await.unwrap();
             assert_eq!(response.code, 200);
         }
     }

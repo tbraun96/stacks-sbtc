@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use std::{collections::HashMap, io::Error};
 
 use crate::state::State;
@@ -8,14 +9,13 @@ use crate::state::State;
 ///
 /// ```
 /// use relay_server::{MemState, State};
-///
-/// let mut mem_state = MemState::default();
-///
-/// mem_state.post(b"Hello world!".to_vec());
-///
-/// let message = mem_state.get("node".to_string()).unwrap();
-///
-/// assert_eq!(message, b"Hello world!".to_vec());
+/// #[tokio::main]
+/// async fn main() {
+///     let mut mem_state = MemState::default();
+///     mem_state.post(b"Hello world!".to_vec()).await.unwrap();;
+///     let message = mem_state.get("node".to_string()).await.unwrap();
+///     assert_eq!(message, b"Hello world!".to_vec());
+/// }
 /// ```
 #[derive(Default)]
 pub struct MemState {
@@ -24,8 +24,9 @@ pub struct MemState {
     queue: Vec<Vec<u8>>,
 }
 
+#[async_trait]
 impl State for MemState {
-    fn get(&mut self, node_id: String) -> Result<Vec<u8>, Error> {
+    async fn get(&mut self, node_id: String) -> Result<Vec<u8>, Error> {
         let first_unread = self
             .highwaters
             .get(&node_id)
@@ -38,7 +39,7 @@ impl State for MemState {
             Vec::default()
         })
     }
-    fn post(&mut self, msg: Vec<u8>) -> Result<(), Error> {
+    async fn post(&mut self, msg: Vec<u8>) -> Result<(), Error> {
         self.queue.push(msg);
         Ok(())
     }
@@ -47,51 +48,51 @@ impl State for MemState {
 #[cfg(test)]
 mod tests {
     use super::{MemState, State};
-    #[test]
-    fn state_test() {
+    #[tokio::test]
+    async fn state_test() {
         let mut state = MemState::default();
-        assert!(state.get(1.to_string()).unwrap().is_empty());
-        assert!(state.get(3.to_string()).unwrap().is_empty());
+        assert!(state.get(1.to_string()).await.unwrap().is_empty());
+        assert!(state.get(3.to_string()).await.unwrap().is_empty());
         assert_eq!(0, state.highwaters.len());
-        state.post("Msg # 0".as_bytes().to_vec()).unwrap();
+        state.post("Msg # 0".as_bytes().to_vec()).await.unwrap();
         assert_eq!(
             "Msg # 0".as_bytes().to_vec(),
-            state.get(1.to_string()).unwrap()
+            state.get(1.to_string()).await.unwrap()
         );
         assert_eq!(
             "Msg # 0".as_bytes().to_vec(),
-            state.get(5.to_string()).unwrap()
+            state.get(5.to_string()).await.unwrap()
         );
         assert_eq!(
             "Msg # 0".as_bytes().to_vec(),
-            state.get(4.to_string()).unwrap()
+            state.get(4.to_string()).await.unwrap()
         );
-        assert!(state.get(1.to_string()).unwrap().is_empty());
-        state.post("Msg # 1".as_bytes().to_vec()).unwrap();
+        assert!(state.get(1.to_string()).await.unwrap().is_empty());
+        state.post("Msg # 1".as_bytes().to_vec()).await.unwrap();
         assert_eq!(
             "Msg # 1".as_bytes().to_vec(),
-            state.get(1.to_string()).unwrap()
+            state.get(1.to_string()).await.unwrap()
         );
         assert_eq!(
             "Msg # 0".as_bytes().to_vec(),
-            state.get(3.to_string()).unwrap()
+            state.get(3.to_string()).await.unwrap()
         );
         assert_eq!(
             "Msg # 1".as_bytes().to_vec(),
-            state.get(5.to_string()).unwrap()
+            state.get(5.to_string()).await.unwrap()
         );
-        state.post("Msg # 2".as_bytes().to_vec()).unwrap();
+        state.post("Msg # 2".as_bytes().to_vec()).await.unwrap();
         assert_eq!(
             "Msg # 2".as_bytes().to_vec(),
-            state.get(1.to_string()).unwrap()
+            state.get(1.to_string()).await.unwrap()
         );
         assert_eq!(
             "Msg # 1".as_bytes().to_vec(),
-            state.get(4.to_string()).unwrap()
+            state.get(4.to_string()).await.unwrap()
         );
         assert_eq!(
             "Msg # 2".as_bytes().to_vec(),
-            state.get(4.to_string()).unwrap()
+            state.get(4.to_string()).await.unwrap()
         );
     }
 }

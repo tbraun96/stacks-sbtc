@@ -126,6 +126,7 @@ where
             Command::DkgSign { msg } => {
                 info!("sign msg: {:?}", msg);
                 self.run_distributed_key_generation().await?;
+                println!("aggregate public key: {}", self.aggregate_public_key);
                 self.sign_message(msg).await?;
                 Ok(())
             }
@@ -140,9 +141,13 @@ where
     pub async fn run_distributed_key_generation(&mut self) -> Result<Point, Error> {
         self.current_dkg_id = self.current_dkg_id.wrapping_add(1);
         info!("Starting DKG round #{}", self.current_dkg_id);
+        println!("AB0");
         self.start_public_shares().await?;
+        println!("AB1");
         let public_key = self.wait_for_public_shares().await?;
+        println!("AB2");
         self.start_private_shares().await?;
+        println!("AB3");
         self.wait_for_dkg_end().await?;
         Ok(public_key)
     }
@@ -161,7 +166,9 @@ where
             sig: dkg_begin.sign(&self.network_private_key).expect(""),
             msg: MessageTypes::DkgBegin(dkg_begin),
         };
+        println!("AB1.1");
         self.network.send_message(dkg_begin_message).await?;
+        println!("AB1.2");
         Ok(())
     }
 
@@ -505,7 +512,7 @@ mod test {
     use rand::rngs::StdRng;
     use rand_core::{OsRng, RngCore, SeedableRng};
     use relay_server::Server as RelayServer;
-    use std::{env, thread};
+    use std::env;
     use test_utils::parse_env;
 
     fn create_signer_key_ids(signer_id: u32, keys_per_signer: u32) -> Vec<u32> {
@@ -540,6 +547,7 @@ mod test {
         let (coordinator_config, coordinator_net_listen) =
             spawn_processes_and_get_config(relay_url).await;
 
+        println!("Spanwed procs");
         let mut coordinator = Coordinator::new(
             DEVNET_COORDINATOR_ID,
             &coordinator_config,
@@ -653,9 +661,9 @@ mod test {
         let net: HttpNet = HttpNet::new(relay_url.clone());
         let coordinator_net_listen: HttpNetListen = HttpNetListen::new(net.clone(), vec![]);
 
-        thread::spawn(move || {
+        tokio::task::spawn(async move {
             let relay_socket_address = relay_url.strip_prefix("http://").unwrap();
-            RelayServer::run(relay_socket_address)
+            RelayServer::run(relay_socket_address).await
         });
 
         for i in 0..num_signers {

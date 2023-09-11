@@ -1,13 +1,14 @@
-use std::{
-    io::{self, Write},
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
-};
+use std::io;
+use std::process::Stdio;
+
+use async_trait::async_trait;
+use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_str, to_string};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use crate::{
-    read_ex::ReadEx,
     rpc::Rpc,
     to_io_result::{TakeToIoResult, ToIoResult},
 };
@@ -15,12 +16,12 @@ use crate::{
 pub struct Js {
     child: Child,
     stdin: ChildStdin,
-    stdout: ChildStdout,
+    stdout: BufReader<ChildStdout>,
 }
 
 impl Drop for Js {
     fn drop(&mut self) {
-        let _ = self.child.kill();
+        let _ = self.child.start_kill();
     }
 }
 
@@ -41,25 +42,33 @@ impl Js {
         Ok(Js {
             child,
             stdin,
-            stdout,
+            stdout: BufReader::new(stdout),
         })
     }
 }
 
 type JsResult<T> = Result<T, String>;
 
+#[async_trait]
 impl Rpc for Js {
-    fn call<I: Serialize, O: Serialize + DeserializeOwned>(&mut self, input: &I) -> io::Result<O> {
+    async fn call<I: Serialize + Sync, O: Serialize + DeserializeOwned>(
+        &mut self,
+        input: &I,
+    ) -> io::Result<O> {
         {
             let stdin = &mut self.stdin;
             let i = to_string(input)?;
-            stdin.write_all(i.as_bytes())?;
-            stdin.write_all("\n".as_bytes())?;
-            stdin.flush()?;
+            stdin.write_all(i.as_bytes()).await?;
+            stdin.write_all("\n".as_bytes()).await?;
+            stdin.flush().await?;
         }
         {
-            let o = self.stdout.read_string_until('\n')?;
-            let result: JsResult<O> = from_str(&o)?;
+            let mut o = Vec::default();
+            let _len = self.stdout.read_until(b'\n', &mut o).await?;
+            let o = String::from_utf8(o).map_err(|err| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, err.to_string())
+            })?;
+            let result: JsResult<O> = from_str(o.trim_end())?;
             result.to_io_result()
         }
     }

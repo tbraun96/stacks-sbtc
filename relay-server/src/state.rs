@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use std::io::Error;
 
 /// An interface that defines the functions that need to be implemented in order to store and
@@ -7,7 +8,8 @@ use std::io::Error;
 /// mechanism and allows for different storage implementations to be used, such as in-memory
 /// or a remote database. By implementing the State trait, you can customize the storage
 /// mechanism to fit your specific use case.
+#[async_trait]
 pub trait State {
-    fn get(&mut self, node_id: String) -> Result<Vec<u8>, Error>;
-    fn post(&mut self, msg: Vec<u8>) -> Result<(), Error>;
+    async fn get(&mut self, node_id: String) -> Result<Vec<u8>, Error>;
+    async fn post(&mut self, msg: Vec<u8>) -> Result<(), Error>;
 }

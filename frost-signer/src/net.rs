@@ -132,6 +132,7 @@ impl Net for HttpNet {
         };
 
         let send_request = || async move {
+            println!("Attempting to send request");
             reqwest::Client::default()
                 .post(&self.http_relay_url)
                 .body(bytes.clone())
