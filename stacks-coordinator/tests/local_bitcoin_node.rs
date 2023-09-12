@@ -14,15 +14,17 @@ use test_utils::{
 
 #[tokio::test]
 async fn should_broadcast_transaction() {
-    let btcd = BitcoinProcess::new();
+    let btcd = BitcoinProcess::new().await;
     let local_btc_node = LocalhostBitcoinNode::new(btcd.url().clone());
 
     // Generates a source wallet
     let (source_secret_key, _, source_public_key, _, source_address, secp) = generate_wallet(false);
     // Mint some funds to the source wallet
-    let (source_txid, blockhash) = mine_and_get_coinbase_txid(&btcd, &source_address);
+    let (source_txid, blockhash) = mine_and_get_coinbase_txid(&btcd, &source_address).await;
     // Get the coinbase transaction
-    let source_tx = get_raw_transaction(&btcd, &source_txid, Some(blockhash)).unwrap();
+    let source_tx = get_raw_transaction(&btcd, &source_txid, Some(blockhash))
+        .await
+        .unwrap();
 
     // Get a deposit escrow wallet public key i.e. address
     let mut signer = SignerHelper::default();
@@ -50,6 +52,7 @@ async fn should_broadcast_transaction() {
     // Convert from BTC to Sats: (1 BTC = 100,000,000 Satoshis)
     let fee = btcd
         .rpc("getmempoolinfo", ())
+        .await
         .get("minrelaytxfee")
         .unwrap()
         .as_f64()
@@ -75,7 +78,9 @@ async fn should_broadcast_transaction() {
         .await
         .unwrap();
     // Ensure it was successfully broadcast
-    assert!(get_raw_transaction(&btcd, &deposit_txid, None).is_ok());
+    assert!(get_raw_transaction(&btcd, &deposit_txid, None)
+        .await
+        .is_ok());
 
     // Withdraw to user's BTC address
     let deposit_utxo_point = OutPoint {
@@ -103,12 +108,14 @@ async fn should_broadcast_transaction() {
         .await
         .unwrap();
     // Ensure it was broadcast correctly
-    assert!(get_raw_transaction(&btcd, &withdrawal_txid, None).is_ok());
+    assert!(get_raw_transaction(&btcd, &withdrawal_txid, None)
+        .await
+        .is_ok());
 }
 
 #[tokio::test]
 async fn should_load_wallet() {
-    let btcd = BitcoinProcess::new();
+    let btcd = BitcoinProcess::new().await;
     let (_, _, _, xonly_pubkey, address, _) = generate_wallet(true);
     dbg!("address: {}", &address);
     let wallet = BitcoinWallet::new(xonly_pubkey, Network::Regtest);
@@ -116,7 +123,7 @@ async fn should_load_wallet() {
     // Attemp to register the address with the wallet
     let local_btc_node = LocalhostBitcoinNode::new(btcd.url().clone());
     local_btc_node.load_wallet(wallet.address()).await.unwrap();
-    let result = btcd.rpc("listreceivedbyaddress", (0, true, true));
+    let result = btcd.rpc("listreceivedbyaddress", (0, true, true)).await;
 
     // Check that the address was registered
     let address_found = result
@@ -141,7 +148,7 @@ async fn should_load_wallet() {
 
 #[tokio::test]
 async fn should_list_unspent() {
-    let btcd = BitcoinProcess::new();
+    let btcd = BitcoinProcess::new().await;
 
     let (_, _, _, xonly_pubkey, _, _) = generate_wallet(true);
 
@@ -151,9 +158,9 @@ async fn should_list_unspent() {
     local_btc_node.load_wallet(wallet.address()).await.unwrap();
 
     // Produce some UTXOs for the address
-    let _ = mine_and_get_coinbase_txid(&btcd, wallet.address());
+    let _ = mine_and_get_coinbase_txid(&btcd, wallet.address()).await;
     // Produce more blocks to make sure the UTXOs are confirmed
-    let _ = mine_and_get_coinbase_txid(&btcd, &wallet.address());
+    let _ = mine_and_get_coinbase_txid(&btcd, &wallet.address()).await;
 
     let utxos = local_btc_node.list_unspent(wallet.address()).await.unwrap();
 

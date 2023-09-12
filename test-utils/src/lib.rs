@@ -17,10 +17,8 @@ use std::{
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     str::FromStr,
-    thread::{self},
     time::{Duration, SystemTime},
 };
-use ureq::serde::Serialize;
 use url::Url;
 use wsts::{
     common::PolyCommitment,
@@ -35,10 +33,11 @@ use wsts::{
 
 use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
-use ureq::serde_json::Value;
-use ureq::{self, json, post};
 
 use once_cell::sync::Lazy;
+use reqwest::StatusCode;
+use serde::Serialize;
+use serde_json::{json, Value};
 use std::sync::Mutex;
 use uuid::Uuid;
 
@@ -185,43 +184,50 @@ impl BitcoinProcess {
         bitcoind_child
     }
 
-    pub fn rpc(&self, method: &str, params: impl Serialize) -> Value {
+    pub async fn rpc(&self, method: &str, params: impl Serialize) -> Value {
         let rpc = json!({"jsonrpc": "1.0", "id": "tst", "method": method, "params": params});
 
-        match post(self.url.as_str()).send_json(rpc) {
+        match reqwest::Client::new()
+            .post(self.url.as_str())
+            .json(&rpc)
+            .send()
+            .await
+        {
             Ok(response) => {
-                let json = response.into_json::<Value>().unwrap();
-                let result = json.as_object().unwrap().get("result").unwrap().clone();
+                let status = response.status();
+                let json = response.json::<Value>().await.unwrap();
 
+                if status != StatusCode::OK {
+                    return json!({ "error": json.to_string() });
+                }
+
+                let result = json.as_object().unwrap().get("result").unwrap().clone();
                 result
             }
             Err(err) => {
                 let err_str = err.to_string();
-                match err.into_response() {
-                    Some(r) => r.into_json::<Value>().unwrap(),
-                    None => json!({ "error": &err_str }),
-                }
+                json!({ "error": &err_str })
             }
         }
     }
 
-    fn connectivity_check(&self) -> Result<f32, String> {
+    async fn connectivity_check(&self) -> Result<f32, String> {
         let now = SystemTime::now();
 
         for _tries in 1..120 {
-            let uptime = self.rpc("uptime", ());
+            let uptime = self.rpc("uptime", ()).await;
 
             if uptime.is_number() {
                 return Ok(now.elapsed().unwrap().as_secs_f32());
             } else {
-                thread::sleep(Duration::from_millis(500));
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
         }
 
         Err("connection timeout".to_string())
     }
 
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
         // Create unique test id to track assets for this process.
         let testid: Uuid = Uuid::new_v4();
 
@@ -254,7 +260,7 @@ impl BitcoinProcess {
             datadir,
             child,
         };
-        this.connectivity_check().unwrap();
+        this.connectivity_check().await.unwrap();
 
         this
     }
@@ -308,16 +314,17 @@ pub fn generate_wallet(
     )
 }
 
-pub fn mine_and_get_coinbase_txid(btcd: &BitcoinProcess, addr: &Address) -> (Txid, String) {
+pub async fn mine_and_get_coinbase_txid(btcd: &BitcoinProcess, addr: &Address) -> (Txid, String) {
     let block_id = btcd
         .rpc("generatetoaddress", (100, addr.to_string()))
+        .await
         .as_array()
         .unwrap()[0]
         .as_str()
         .unwrap()
         .to_string();
 
-    let block = btcd.rpc("getblock", (block_id, 1));
+    let block = btcd.rpc("getblock", (block_id, 1)).await;
     let blockhash = block.get("hash").unwrap().as_str().unwrap().to_string();
 
     (
@@ -326,18 +333,20 @@ pub fn mine_and_get_coinbase_txid(btcd: &BitcoinProcess, addr: &Address) -> (Txi
     )
 }
 
-pub fn get_raw_transaction(
+pub async fn get_raw_transaction(
     btcd: &BitcoinProcess,
     txid: &Txid,
     blockhash: Option<String>,
 ) -> Result<Transaction, bitcoin::consensus::encode::Error> {
     let tx_raw = if let Some(blockhash) = blockhash {
         btcd.rpc("getrawtransaction", (&txid.to_string(), false, blockhash))
+            .await
             .as_str()
             .unwrap()
             .to_string()
     } else {
         btcd.rpc("getrawtransaction", (&txid.to_string(), false))
+            .await
             .as_str()
             .unwrap()
             .to_string()

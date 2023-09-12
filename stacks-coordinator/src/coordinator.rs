@@ -19,7 +19,6 @@ use std::{
     collections::BTreeMap,
     fs::File,
     path::{Path, PathBuf},
-    sync::mpsc::RecvError,
     time::Duration,
 };
 use tracing::{debug, info, warn};
@@ -76,8 +75,6 @@ pub enum Error {
     /// Error occurred in the Sqlite Peg Queue
     #[error("Sqlite Peg Queue Error: {0}")]
     SqlitePegQueueError(#[from] SqlitePegQueueError),
-    #[error("Command sender disconnected unexpectedly: {0}")]
-    UnexpectedSenderDisconnect(#[from] RecvError),
     #[error("Stacks Node Error: {0}")]
     StacksNodeError(#[from] StacksNodeError),
     #[error("Bitcoin Node Error: {0}")]

@@ -99,8 +99,8 @@ fn blog_post() {
     assert!(blog_verify.is_ok(), "blog sig check {:?}", blog_verify);
 }
 
-#[test]
-fn frost_btc() {
+#[tokio::test]
+async fn frost_btc() {
     // Merkle root for taproot tweaks (null to prevent script spends)
     let merkle_root = [0u8; 32];
     // Singer setup
@@ -110,13 +110,15 @@ fn frost_btc() {
         signer.run_distributed_key_generation(Some(merkle_root));
 
     // bitcoind regtest
-    let btcd = BitcoinProcess::new();
+    let btcd = BitcoinProcess::new().await;
 
     // create user source transaction keys
     let (source_secret_key, _, source_public_key, _, source_address, secp) = generate_wallet(false);
     // mine block to create btc
-    let (source_txid, blockhash) = mine_and_get_coinbase_txid(&btcd, &source_address);
-    let source_tx = get_raw_transaction(&btcd, &source_txid, Some(blockhash)).unwrap();
+    let (source_txid, blockhash) = mine_and_get_coinbase_txid(&btcd, &source_address).await;
+    let source_tx = get_raw_transaction(&btcd, &source_txid, Some(blockhash))
+        .await
+        .unwrap();
 
     // Deposit into a stx address
     let stx_address: [u8; 32] = [0; 32];
@@ -165,9 +167,9 @@ fn frost_btc() {
             .collect::<Vec<_>>()
     );
 
-    let _ = btcd.rpc("decoderawtransaction", [&deposit_bytes_hex]);
+    let _ = btcd.rpc("decoderawtransaction", [&deposit_bytes_hex]).await;
     println!("deposit tx bytes {}", deposit_bytes_hex);
-    let deposit_result_value = btcd.rpc("sendrawtransaction", [&deposit_bytes_hex]);
+    let deposit_result_value = btcd.rpc("sendrawtransaction", [&deposit_bytes_hex]).await;
     assert!(deposit_result_value.is_string(), "{}", deposit_result_value);
 
     let deposit_utxo = &deposit_tx.output[1];
@@ -200,7 +202,9 @@ fn frost_btc() {
 
     println!("withdrawal tx bytes {}", &withdrawal_bytes_hex);
 
-    let withdrawal_result_value = btcd.rpc("sendrawtransaction", [&withdrawal_bytes_hex]);
+    let withdrawal_result_value = btcd
+        .rpc("sendrawtransaction", [&withdrawal_bytes_hex])
+        .await;
     assert!(
         withdrawal_result_value.is_string(),
         "{}",
