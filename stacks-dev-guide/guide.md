@@ -205,16 +205,16 @@ Database file location are relative to `working_directory/mainnet`
 
 | Database file location | Description
 | --- | ---
-| chainstate/estimates/fee_estimator_scalar_rate.sqlite | 
-| chainstate/estimates/cost_estimator_pessimistic.sqlite | 
-| chainstate/vm/index.sqlite | 
-| chainstate/vm/clarity/marf.sqlite | 
-| chainstate/mempool.sqlite | 
-| headers.sqlite | 
-| atlas.sqlite | 
-| peer.sqlite | 
-| burnchain/burnchain.sqlite | 
-| burnchain/sortition/marf.sqlite | 
+| chainstate/estimates/fee_estimator_scalar_rate.sqlite |
+| chainstate/estimates/cost_estimator_pessimistic.sqlite |
+| chainstate/vm/index.sqlite |
+| chainstate/vm/clarity/marf.sqlite |
+| chainstate/mempool.sqlite |
+| headers.sqlite |
+| atlas.sqlite |
+| peer.sqlite |
+| burnchain/burnchain.sqlite |
+| burnchain/sortition/marf.sqlite |
 
 ## How do I explore the sqlite db’s?
 
@@ -256,7 +256,7 @@ The `clarity` directory is the Clarity VM, and it does not depend on any of the 
 
 ## How do I get testnet STX coins from the faucet?
 
-Visit https://explorer.stacks.co/sandbox/faucet?chain=testnet 
+Visit https://explorer.stacks.co/sandbox/faucet?chain=testnet
 
 The chain=testnet will configure testnet mode and also a url for the public testnet. The Networks tab can be used to add any url for an alternate stacks network. This was done for Stacks 2.1 testing because it was a hard-fork.
 
@@ -278,10 +278,10 @@ Generate the transaction. stack-stx function signature from pox-2.clar.
            (lock-period uint)) ; number of reward cycles to lock for
 ```
 
-note on pox-addr: version values are in pox-2.clar. p2pkh = 1 (legacy address. 20 byte hashbytes). hashbytes come from base58 decoding the bitcoin address to a 25 byte/50 char hex string and removing the leading version byte and the four trailing checksum bytes. 
+note on pox-addr: version values are in pox-2.clar. p2pkh = 1 (legacy address. 20 byte hashbytes). hashbytes come from base58 decoding the bitcoin address to a 25 byte/50 char hex string and removing the leading version byte and the four trailing checksum bytes.
 
 ```
-blockstack-cli --testnet contract-call <66 byte stx private key in hex> 300 3 ST000000000000000000002AMW42H pox-2 stack-stx 
+blockstack-cli --testnet contract-call <66 byte stx private key in hex> 300 3 ST000000000000000000002AMW42H pox-2 stack-stx
                 -e u5160000000000 -e '{version: 0x01, hashbytes: 0xe8b19d771ed4f3ab18dd5c8cc6fca3a2a1c31b61}' -e u2409274 -e u1  > tx.json
 ```
 
@@ -305,7 +305,7 @@ One way to generate the serialized clarity value is to use https://github.com/jc
 note: the http endpoint will ignore posts unless the content-type header is included and set for json.
 
 ```
-$ curl https://2-1-api.testnet.hiro.so/v2/contracts/call-read/ST000000000000000000002AMW42H/pox-2/get-total-ustx-stacked 
+$ curl https://2-1-api.testnet.hiro.so/v2/contracts/call-read/ST000000000000000000002AMW42H/pox-2/get-total-ustx-stacked
            -d '{"sender":"ST3MB37BQ3VAF7ARRVNE8SHQWMEHA3GRVC6QCSB7M", "arguments": ["0100000000000000000000000000000001"]}' -H "content-type: application/json"
 {"okay":true,"result":"0x0100000000000000000000000000000000"}
 ```
@@ -339,5 +339,5 @@ md-toc guide.md
 
 As announced in [Jude's tweet][TWEET_RADON], you can participate in the Radon 2.1 testnet by following these steps: mentioned in this [Gist][RADON_GISTS].
 
-[TWEET_RADON]: https://twitter.com/judecnelson/status/1623151711530504192 
+[TWEET_RADON]: https://twitter.com/judecnelson/status/1623151711530504192
 [RADON_GISTS]: https://gist.github.com/jcnelson/c5f43cbefba3727dcccf5a95209b60fc

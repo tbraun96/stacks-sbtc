@@ -24,7 +24,7 @@ if [[ $OSTYPE == 'darwin'* ]]
 then
     # URL to Bitcoin v22.0
     curl -o bitcoin.rb https://raw.githubusercontent.com/Homebrew/homebrew-core/fa6b4765d81016166f6de2bdad96cfe914c1439f/Formula/bitcoin.rb
-    brew install ./bitcoin.rb
+    HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 brew install ./bitcoin.rb
 else
     curl -o bitcoin-22.0-${platform}.tar.gz https://bitcoincore.org/bin/bitcoin-core-22.0/bitcoin-22.0-${platform}.tar.gz
     tar xzf bitcoin-22.0-${platform}.tar.gz

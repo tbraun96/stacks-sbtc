@@ -10,7 +10,7 @@ anyhow.workspace = true
 array-bytes.workspace = true
 bdk = { workspace = true, features = ["keys-bip39"] }
 bitcoin.workspace = true
-blockstack-core.workspace = true
+stackslib.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
