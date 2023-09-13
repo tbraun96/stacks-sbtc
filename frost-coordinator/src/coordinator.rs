@@ -141,13 +141,9 @@ where
     pub async fn run_distributed_key_generation(&mut self) -> Result<Point, Error> {
         self.current_dkg_id = self.current_dkg_id.wrapping_add(1);
         info!("Starting DKG round #{}", self.current_dkg_id);
-        println!("AB0");
         self.start_public_shares().await?;
-        println!("AB1");
         let public_key = self.wait_for_public_shares().await?;
-        println!("AB2");
         self.start_private_shares().await?;
-        println!("AB3");
         self.wait_for_dkg_end().await?;
         Ok(public_key)
     }
@@ -166,9 +162,7 @@ where
             sig: dkg_begin.sign(&self.network_private_key).expect(""),
             msg: MessageTypes::DkgBegin(dkg_begin),
         };
-        println!("AB1.1");
         self.network.send_message(dkg_begin_message).await?;
-        println!("AB1.2");
         Ok(())
     }
 
