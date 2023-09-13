@@ -5,7 +5,7 @@ use stacks_coordinator::config::Config;
 use stacks_coordinator::coordinator::{config_to_stacks_coordinator, Coordinator};
 use tracing::{error, info, warn};
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let cli = Cli::parse();
 

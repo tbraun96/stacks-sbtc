@@ -40,7 +40,7 @@ mod tests {
     use super::super::*;
     use super::*;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test() {
         let mut state = ProxyState(Server::default());
         assert!(state.get(1.to_string()).await.unwrap().is_empty());

@@ -1,7 +1,7 @@
 use frost_signer::net::{HttpNet, HttpNetListen, Message, NetListen};
 use frost_signer::signing_round::{DkgBegin, MessageTypes};
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn receive_msg() {
     let m1 = Message {
         msg: MessageTypes::DkgBegin(DkgBegin { dkg_id: 0 }),

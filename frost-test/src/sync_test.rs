@@ -4,7 +4,7 @@ mod tests {
     use relay_server::Server;
     use yarpc::http::{Call, Method, Request};
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn template_test() {
         let mut server = Server::default();
         let _signers = [

@@ -1,7 +1,7 @@
 use clap::Parser;
 use relay_server::Server;
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let args = Cli::parse();
     Server::run(&args.listen).await;

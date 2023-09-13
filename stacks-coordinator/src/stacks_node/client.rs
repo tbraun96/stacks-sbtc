@@ -521,7 +521,7 @@ mod tests {
         request_bytes
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn call_read_success_test() {
         let config = TestConfig::new().await;
         let h = tokio::task::spawn(async move {
@@ -539,7 +539,7 @@ mod tests {
         assert_eq!(result, "0x070d0000000473425443");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn call_read_failure_test() {
         let config = TestConfig::new().await;
         let h = tokio::task::spawn(async move {
@@ -557,7 +557,7 @@ mod tests {
         assert!(matches!(result, Err(StacksNodeError::ReadOnlyFailure(_))));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn signer_data_none_test() {
         let config = TestConfig::new().await;
 
@@ -578,7 +578,7 @@ mod tests {
         assert!(matches!(result, Err(StacksNodeError::NoSignerData(_))));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn keys_threshold_test() {
         let config = TestConfig::new().await;
 
@@ -590,7 +590,7 @@ mod tests {
         assert_eq!(result, 2800);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn keys_threshold_invalid_test() {
         let config = TestConfig::new().await;
 
@@ -608,7 +608,7 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn num_signers_test() {
         let config = TestConfig::new().await;
 
@@ -620,7 +620,7 @@ mod tests {
         assert_eq!(result, 4000);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn num_signers_invalid_test() {
         let config = TestConfig::new().await;
 
@@ -637,7 +637,7 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn next_nonce_success_test() {
         let mut config = TestConfig::new().await;
 
@@ -654,7 +654,7 @@ mod tests {
         assert_eq!(next_nonce, 21);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn next_nonce_failure_test() {
         let mut config = TestConfig::new().await;
 
@@ -668,7 +668,7 @@ mod tests {
         assert!(matches!(result, Err(StacksNodeError::UnknownAddress(_))));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn burn_block_height_success_test() {
         let config = TestConfig::new().await;
 
@@ -682,7 +682,7 @@ mod tests {
         assert_eq!(result, 2430220);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn burn_block_height_failure_test() {
         let config = TestConfig::new().await;
 
@@ -696,7 +696,7 @@ mod tests {
         assert!(matches!(result, Err(StacksNodeError::InvalidJsonEntry(_))));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn should_send_tx_bytes_to_node() {
         let config = TestConfig::new().await;
         let tx = StacksTransaction {

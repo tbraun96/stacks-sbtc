@@ -21,7 +21,7 @@ impl Call for RemoteServer {
     }
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
     // waiting for a server
     while TcpStream::connect(ADDR).await.is_err() {

@@ -277,7 +277,7 @@ async fn serve_swagger(
     }
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let cli = Cli::parse();
 

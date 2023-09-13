@@ -574,7 +574,7 @@ mod tests {
     use blockstack_lib::types::chainstate::BurnchainHeaderHash;
 
     #[ignore]
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn btc_fulfill_peg_out() {
         let raw_config = RawConfig {
             signer_config_path: Some("conf/signer.toml".to_string()),

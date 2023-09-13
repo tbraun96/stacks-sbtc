@@ -6,7 +6,7 @@ use stacks_signer::signer::Signer;
 use tracing::info;
 use wsts::Point;
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let cli = Cli::parse();
 

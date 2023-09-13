@@ -76,7 +76,7 @@ mod tests {
 
     use super::{Message, Request};
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test() {
         const REQUEST: &str = "\
             POST / HTTP/1.1\r\n\
@@ -101,7 +101,7 @@ mod tests {
         assert_eq!(from_utf8(&v), Ok(EXPECTED));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_header() {
         const REQUEST: &str = "\
             POST / HTTP/1.1\r\n\
@@ -129,7 +129,7 @@ mod tests {
         assert_eq!(from_utf8(&v), Ok(EXPECTED));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn incomplete_message_test() {
         const REQUEST: &str = "\
             POST / HTTP/1.1\r\n\
@@ -138,7 +138,7 @@ mod tests {
         assert!(Request::read(&mut read).await.is_err());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn incomplete_content_test() {
         const REQUEST: &str = "\
             POST / HTTP/1.1\r\n\
@@ -148,7 +148,7 @@ mod tests {
         assert!(Request::read(&mut read).await.is_err());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn invalid_message_test() {
         const REQUEST: &str = "\
             POST / HTTP/1.1\r\n\
@@ -159,7 +159,7 @@ mod tests {
         assert!(Request::read(&mut read).await.is_err());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn no_content_test() {
         const REQUEST: &str = "\
             GET /images/logo.png HTTP/1.1\r\n\
@@ -180,7 +180,7 @@ mod tests {
         assert_eq!(from_utf8(&v), Ok(EXPECTED));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn invalid_utf8_should_not_panic() {
         const REQUEST: &[u8] = &[0xFF];
         let mut read = Cursor::new(REQUEST);

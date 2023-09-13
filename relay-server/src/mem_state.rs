@@ -48,7 +48,7 @@ impl State for MemState {
 #[cfg(test)]
 mod tests {
     use super::{MemState, State};
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn state_test() {
         let mut state = MemState::default();
         assert!(state.get(1.to_string()).await.unwrap().is_empty());

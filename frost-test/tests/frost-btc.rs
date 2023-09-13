@@ -99,7 +99,7 @@ fn blog_post() {
     assert!(blog_verify.is_ok(), "blog sig check {:?}", blog_verify);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn frost_btc() {
     // Merkle root for taproot tweaks (null to prevent script spends)
     let merkle_root = [0u8; 32];

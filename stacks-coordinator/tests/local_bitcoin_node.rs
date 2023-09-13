@@ -12,7 +12,7 @@ use test_utils::{
     SignerHelper,
 };
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn should_broadcast_transaction() {
     let btcd = BitcoinProcess::new().await;
     let local_btc_node = LocalhostBitcoinNode::new(btcd.url().clone());
@@ -113,7 +113,7 @@ async fn should_broadcast_transaction() {
         .is_ok());
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn should_load_wallet() {
     let btcd = BitcoinProcess::new().await;
     let (_, _, _, xonly_pubkey, address, _) = generate_wallet(true);
@@ -146,7 +146,7 @@ async fn should_load_wallet() {
     assert!(address_found);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn should_list_unspent() {
     let btcd = BitcoinProcess::new().await;
 

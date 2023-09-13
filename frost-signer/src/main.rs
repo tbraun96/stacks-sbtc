@@ -5,7 +5,7 @@ use frost_signer::config::{Cli, Config};
 use frost_signer::logging;
 use frost_signer::signer::Signer;
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
     logging::initiate_tracing_subscriber();
 

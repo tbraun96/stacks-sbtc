@@ -15,7 +15,7 @@ pub struct Cli {
     pub command: Command,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
     logging::initiate_tracing_subscriber();
 

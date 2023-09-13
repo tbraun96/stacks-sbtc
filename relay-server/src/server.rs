@@ -113,7 +113,7 @@ mod test {
 
     use super::*;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test() {
         let mut server = Server::default();
         {
