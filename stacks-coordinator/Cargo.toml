@@ -24,7 +24,7 @@ thiserror = { workspace = true }
 toml = { workspace = true }
 wsts = { workspace = true }
 bitcoin.workspace = true
-reqwest = { version = "0.11.14", features = ["json"] }
+reqwest = { workspace = true, features = ["json"] }
 backoff = { workspace = true }
 url = { workspace = true }
 async-trait = { workspace = true }
