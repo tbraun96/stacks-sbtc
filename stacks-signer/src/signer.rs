@@ -1,4 +1,5 @@
 use frost_signer::config::Config;
+use frost_signer::net::{HttpNet, HttpNetListen};
 use frost_signer::signer::{Error as SignerError, Signer as FrostSigner};
 
 #[derive(Clone)]
@@ -15,6 +16,8 @@ impl Signer {
     }
 
     pub async fn start_p2p_async(&mut self) -> Result<(), SignerError> {
-        self.frost_signer.start_p2p_async().await
+        let net: HttpNet = HttpNet::new(self.frost_signer.config.http_relay_url.clone());
+        let net_queue = HttpNetListen::new(net.clone(), vec![]);
+        self.frost_signer.start_p2p_async(net_queue).await
     }
 }

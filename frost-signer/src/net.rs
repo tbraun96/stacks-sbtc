@@ -57,11 +57,10 @@ impl HttpNet {
 
 // these functions manipulate the inbound message queue
 #[async_trait]
-pub trait NetListen {
+pub trait NetListen: Clone + Send + Sync + 'static {
     type Error: Debug;
-    type Arg: Clone;
 
-    async fn poll(&self, arg: Self::Arg);
+    async fn poll(&self, arg: u32);
     async fn next_message(&self) -> Option<Message>;
     async fn send_message(&self, msg: Message) -> Result<(), Self::Error>;
 }
@@ -69,7 +68,6 @@ pub trait NetListen {
 #[async_trait]
 impl NetListen for HttpNetListen {
     type Error = Error;
-    type Arg = u32;
 
     async fn poll(&self, id: u32) {
         let url = url_with_id(&self.net.lock().await.http_relay_url, id);

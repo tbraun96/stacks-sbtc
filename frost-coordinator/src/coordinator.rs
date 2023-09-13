@@ -50,7 +50,7 @@ pub enum Command {
 }
 
 pub struct Coordinator<Network: NetListen> {
-    id: Network::Arg, // Used for relay coordination
+    id: u32, // Used for relay coordination
     current_dkg_id: u64,
     current_dkg_public_id: u64,
     current_sign_id: u64,
@@ -68,7 +68,7 @@ pub struct Coordinator<Network: NetListen> {
 }
 
 impl<Network: NetListen> Coordinator<Network> {
-    pub fn new(id: Network::Arg, config: &Config, network: Network) -> Result<Self, Error> {
+    pub fn new(id: u32, config: &Config, network: Network) -> Result<Self, Error> {
         Ok(Self {
             id,
             current_dkg_id: 0,
@@ -162,7 +162,9 @@ where
             sig: dkg_begin.sign(&self.network_private_key).expect(""),
             msg: MessageTypes::DkgBegin(dkg_begin),
         };
+        println!("AB1.1");
         self.network.send_message(dkg_begin_message).await?;
+        println!("AB1.2");
         Ok(())
     }
 
@@ -463,7 +465,7 @@ where
         let Self { network, id, .. } = &self;
 
         let get_next_message = || async move {
-            network.poll(id.clone()).await;
+            network.poll(*id).await;
             // We only ever receive already verified messages. No need to check result.
             network
                 .next_message()
@@ -664,7 +666,10 @@ mod test {
             let config = signer_configs[i as usize].clone();
             tokio::task::spawn(async move {
                 let mut signer = Signer::new(config, i + 1);
-                signer.start_p2p_async().await.unwrap();
+                //Create http relay
+                let net: HttpNet = HttpNet::new(signer.config.http_relay_url.clone());
+                let net_queue = HttpNetListen::new(net.clone(), vec![]);
+                signer.start_p2p_async(net_queue).await.unwrap();
             });
         }
 

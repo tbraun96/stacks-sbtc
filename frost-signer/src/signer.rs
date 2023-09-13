@@ -1,5 +1,5 @@
 use crate::config::{Config, PublicKeys};
-use crate::net::{Error as HttpNetError, HttpNet, HttpNetListen, Message, Net, NetListen};
+use crate::net::{Error as HttpNetError, Message, NetListen};
 use crate::signing_round::{Error as SigningRoundError, MessageTypes, Signable, SigningRound};
 use p256k1::ecdsa;
 use std::time;
@@ -19,20 +19,20 @@ impl Signer {
         Self { config, signer_id }
     }
 
-    pub async fn start_p2p_async(&mut self) -> Result<(), Error> {
+    pub async fn start_p2p_async<Net: NetListen>(&mut self, network: Net) -> Result<(), Error>
+    where
+        Error: From<<Net as NetListen>::Error>,
+    {
         let public_keys = self.config.public_keys.clone();
         let coordinator_public_key = self.config.coordinator_public_key;
-
-        //Create http relay
-        let net: HttpNet = HttpNet::new(self.config.http_relay_url.clone());
-        let net_queue = HttpNetListen::new(net.clone(), vec![]);
         // thread coordination
         let (tx, rx): (Sender<Message>, Receiver<Message>) = mpsc::unbounded_channel();
 
         // start p2p sync
         let id = self.signer_id;
+        let network_poll = network.clone();
         tokio::task::spawn(poll_loop(
-            net_queue,
+            network_poll,
             tx,
             id,
             public_keys,
@@ -40,14 +40,17 @@ impl Signer {
         ));
 
         // listen to p2p messages
-        self.start_signing_round(&net, rx).await
+        self.start_signing_round(&network, rx).await
     }
 
-    async fn start_signing_round(
+    async fn start_signing_round<Net: NetListen>(
         &self,
-        net: &HttpNet,
+        net: &Net,
         mut rx: Receiver<Message>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error>
+    where
+        Error: From<<Net as NetListen>::Error>,
+    {
         let network_private_key = self.config.network_private_key;
         let mut round = SigningRound::from(self);
         loop {
@@ -119,8 +122,8 @@ impl From<mpsc::error::SendError<Message>> for Error {
     }
 }
 
-async fn poll_loop(
-    net: HttpNetListen,
+async fn poll_loop<Net: NetListen>(
+    net: Net,
     tx: Sender<Message>,
     id: u32,
     public_keys: PublicKeys,
